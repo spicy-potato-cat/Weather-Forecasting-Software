@@ -1,12 +1,13 @@
 
 /* Theme color variables */
-
 :root {
-  --main-bg: #132a13;           /* Dark green */
-  --container-bg: #31572c;      /* Hunter green */
-  --accent: #4f772d;            /* Fern green */
-  --button-bg: #90a955;         /* Moss green */
-  --highlight-bg: #ecf39e;      /* Mindaro */
+  --main-bg: #132a13;       /* Dark green */
+  --secondary-bg: #31572c;     /* Hunter green */
+  --accent: #4f772d;      /* Fern green */
+  --highlight: #90a955;         /* Moss green */
+  --muted: #ecf39e;        /* Mindaro */
+  --text-primary: #d7d7d7;       /* Main text color */
+  --text-secondary: #222;         /* Secondary text color */
 }
 
 
@@ -22,34 +23,50 @@
 
 .app-container {
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   background: var(--main-bg);
   border-radius: 16px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  /* Removed box-shadow */
   padding: 2rem;
+  box-sizing: border-box;
 }
 
-.top-bar {
+/* NavBar Styles */
+.navbar {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 2rem;
+  justify-content: space-between;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--accent);
   margin-bottom: 2rem;
 }
 
-.site-title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--accent);
-  margin-right: 2rem;
-}
-
-.hamburger-menu {
+.navbar-left {
   display: flex;
   align-items: center;
+  gap: 1rem;
+}
+
+.site-logo {
+  width: 40px;
+  height: 40px;
+}
+
+.site-title {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 
 .menu-btn {
-  background: var(--button-bg);
+  background: var(--muted);
   border: none;
   border-radius: 8px;
   padding: 0.5rem 1rem;
@@ -72,7 +89,7 @@
 }
 
 .search-btn {
-  background: var(--highlight-bg);
+  background: var(--highlight);
   border: none;
   border-radius: 8px;
   padding: 0.5rem 1rem;
@@ -83,10 +100,10 @@
 
 .dashboard {
   margin-top: 2rem;
-  background: var(--button-bg);
+  background: var(--secondary-bg);
   border-radius: 12px;
   padding: 1.5rem;
-  color: #222;
+  color: var(--text-primary);
 }
 
 .current-weather p {
@@ -96,12 +113,16 @@
 
 .map-section {
   margin-top: 2rem;
-  background: var(--highlight-bg);
+  background: var(--muted);
   border-radius: 12px;
   padding: 1.5rem;
 }
 
-.map-section h2 {
-  color: var(--accent);
+.menu-icon{
+  color: var(--secondary-bg);
 }
 
+.map-section h2 {
+  color: var(--accent);
+  text-shadow: rgba(138, 132, 226, 0.6) 1px 1px 0;
+}

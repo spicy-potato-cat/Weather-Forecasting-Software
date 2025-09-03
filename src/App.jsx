@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import Logo from '/Logo.svg'
 import './App.css'
 
 function App() {
@@ -8,33 +7,35 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Hamburger Menu */}
-      <nav className="hamburger-menu">
-        <button className="menu-btn" aria-label="Open navigation menu">
-          <span className="menu-icon">&#9776;</span>
-        </button>
-        {/* Add menu items here */}
+      {/* Navigation Bar */}
+      <nav className="navbar">
+        <div className="navbar-left">
+          <img src={Logo} alt="Logo" className="site-logo" />
+          <span className="site-title">Weather Forecasting</span>
+        </div>
+        <div className="navbar-right">
+          <button className="menu-btn" aria-label="Open navigation menu">
+            <span className="menu-icon">&#9776;</span>
+          </button>
+          <div className="search-section">
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Search for a location..."
+            />
+            <button className="search-btn">Search</button>
+          </div>
+        </div>
       </nav>
 
       {/* Dashboard Section */}
       <section className="dashboard">
-        <h1>Weather Dashboard</h1>
         <div className="current-weather">
           {/* Placeholder for current weather info */}
           <p>Location: --</p>
           <p>Temperature: --°C</p>
           <p>Condition: --</p>
         </div>
-      </section>
-
-      {/* Search Menu */}
-      <section className="search-section">
-        <input
-          type="text"
-          className="search-input"
-          placeholder="Search for a location..."
-        />
-        <button className="search-btn">Search</button>
       </section>
 
       {/* Map iFrame Section */}
