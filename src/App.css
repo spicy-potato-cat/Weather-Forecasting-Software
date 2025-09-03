@@ -2,11 +2,11 @@
 /* Theme color variables */
 
 :root {
-  --main-bg: #B7D3F2;           /* Uranian Blue */
-  --container-bg: #AFAFDC;      /* Periwinkle */
-  --accent: #8A84E2;            /* Tropical Indigo */
-  --button-bg: #84AFE6;         /* Jordy Blue */
-  --highlight-bg: #79BEEE;      /* Maya Blue */
+  --main-bg: #132a13;           /* Dark green */
+  --container-bg: #31572c;      /* Hunter green */
+  --accent: #4f772d;            /* Fern green */
+  --button-bg: #90a955;         /* Moss green */
+  --highlight-bg: #ecf39e;      /* Mindaro */
 }
 
 
@@ -22,7 +22,7 @@
 
 .app-container {
   width: 100%;
-  background: var(--container-bg);
+  background: var(--main-bg);
   border-radius: 16px;
   box-shadow: 0 4px 24px rgba(0,0,0,0.08);
   padding: 2rem;
@@ -76,7 +76,7 @@
   border: none;
   border-radius: 8px;
   padding: 0.5rem 1rem;
-  color: #fff;
+  color: #000;
   font-weight: 600;
   cursor: pointer;
 }
