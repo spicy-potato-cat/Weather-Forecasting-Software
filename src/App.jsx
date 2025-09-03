@@ -7,28 +7,48 @@ function App() {
   const [count, setCount] = useState(0)
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+    <div className="app-container">
+      {/* Hamburger Menu */}
+      <nav className="hamburger-menu">
+        <button className="menu-btn" aria-label="Open navigation menu">
+          <span className="menu-icon">&#9776;</span>
         </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+        {/* Add menu items here */}
+      </nav>
+
+      {/* Dashboard Section */}
+      <section className="dashboard">
+        <h1>Weather Dashboard</h1>
+        <div className="current-weather">
+          {/* Placeholder for current weather info */}
+          <p>Location: --</p>
+          <p>Temperature: --°C</p>
+          <p>Condition: --</p>
+        </div>
+      </section>
+
+      {/* Search Menu */}
+      <section className="search-section">
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search for a location..."
+        />
+        <button className="search-btn">Search</button>
+      </section>
+
+      {/* Map iFrame Section */}
+      <section className="map-section">
+        <h2>Weather Map</h2>
+        <iframe
+          title="Weather Map"
+          src="https://your-map-site.example.com"
+          width="100%"
+          height="400"
+          style={{ border: 'none' }}
+        ></iframe>
+      </section>
+    </div>
   )
 }
 
