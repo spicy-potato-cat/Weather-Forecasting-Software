@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/login.jsx
 import { useState } from "react";
 
 function LoginPage() {
@@ -163,6 +163,4 @@ const styles = {
     link: { color: "#2563eb", textDecoration: "none" },
 };
 
-export default function App() {
-    return <LoginPage />;
-}
+export default LoginPage;

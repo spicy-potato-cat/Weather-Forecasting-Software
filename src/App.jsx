@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import LoginPage from './login.jsx'
 import Logo from '/Logo.svg'
 import './App.css'
 
@@ -64,6 +65,7 @@ function AttributeDetail({ name }) {
 }
 
 function App() {
+  const location = useLocation()
   return (
     <Router>
       <>
@@ -91,6 +93,7 @@ function App() {
         <div className="app-container">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/login" element={<LoginPage />} />
             <Route path="/temperature" element={<AttributeDetail name="Temperature" />} />
             <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
             <Route path="/wind" element={<AttributeDetail name="Wind" />} />
@@ -99,17 +102,19 @@ function App() {
             <Route path="/surface-pressure" element={<AttributeDetail name="Surface Pressure" />} />
             <Route path="/sealevel-pressure" element={<AttributeDetail name="Sealevel Pressure" />} />
           </Routes>
-          {/* Map iFrame Section */}
-          <section className="map-section">
-            <h2>Weather Map</h2>
-            <iframe
-              title="Weather Map"
-              src="https://your-map-site.example.com"
-              width="100%"
-              height="400"
-              style={{ border: 'none' }}
-            ></iframe>
-          </section>
+          {/* Map iFrame Section only on landing page */}
+          {location.pathname === '/' && (
+            <section className="map-section">
+              <h2>Weather Map</h2>
+              <iframe
+                title="Weather Map"
+                src="https://your-map-site.example.com"
+                width="100%"
+                height="400"
+                style={{ border: 'none' }}
+              ></iframe>
+            </section>
+          )}
         </div>
       </>
     </Router>
