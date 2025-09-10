@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-route
 import LoginPage from './login.jsx'
 import Logo from '/Logo.svg'
 import './App.css'
+import Navbar from './components/navbar/navbar.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -57,10 +58,13 @@ function Dashboard() {
 // Placeholder detail pages for each attribute
 function AttributeDetail({ name }) {
   return (
-    <div className="attribute-detail">
-      <h3>{name} Details</h3>
-      <p>Details for {name} will be shown here.</p>
-    </div>
+    <>
+      <Navbar />
+      <div className="attribute-detail">
+        <h3>{name} Details</h3>
+        <p>Details for {name} will be shown here.</p>
+      </div>
+    </>
   )
 }
 
@@ -68,26 +72,7 @@ function App() {
   return (
     <Router>
       <>
-        {/* Navigation Bar */}
-        <nav className="navbar">
-          <div className="navbar-left">
-            <img src={Logo} alt="Logo" className="site-logo" />
-            <span className="site-title">Weather Forecasting</span>
-          </div>
-          <div className="navbar-right">
-            <div className="search-section">
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search for a location..."
-              />
-              <button className="search-btn">Search</button>
-            </div>
-            <button className="menu-btn" aria-label="Open navigation menu">
-              <span className="menu-icon">&#9776;</span>
-            </button>
-          </div>
-        </nav>
+       <Navbar title="Weather Forecasting" />
 
         <div className="app-container">
           <Routes>
