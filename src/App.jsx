@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom'
 import LoginPage from './login.jsx'
+import Temperature from './temperature.jsx'
 import Logo from '/Logo.svg'
 import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
@@ -78,7 +79,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/temperature" element={<AttributeDetail name="Temperature" />} />
+            <Route path="/temperature" element={<Temperature />} />
             <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
             <Route path="/wind" element={<AttributeDetail name="Wind" />} />
             <Route path="/aqi" element={<AttributeDetail name="AQI" />} />
