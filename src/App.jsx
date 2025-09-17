@@ -73,9 +73,9 @@ function App() {
   return (
     <Router>
       <>
-       <Navbar title="Weather Forecasting" />
+       <Navbar title="Aether" />
 
-        <div className="app-container">
+        <div className="glass">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/login" element={<LoginPage />} />

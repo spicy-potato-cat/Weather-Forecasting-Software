@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
-import Logo from '/Logo.svg'
+import Logo from '/cloud-white-icon.png';
 import "./NavBar.css";
 
 
@@ -9,7 +9,7 @@ import "./NavBar.css";
 /**
  * Navigation Bar
  */
-export default function NavBar({ title = "Weather Forecasting", onSearch, onMenuToggle }) {
+export default function NavBar({ title = "Aether", onSearch, onMenuToggle }) {
     const [query, setQuery] = useState("");
 
     const handleSubmit = (e) => {
@@ -18,7 +18,13 @@ export default function NavBar({ title = "Weather Forecasting", onSearch, onMenu
     };
 
     return (
-        <nav className="navbar">
+        <div>
+            <>
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+                <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Mozilla+Headline:wght@200..700&display=swap" rel="stylesheet" />
+            </>
+            <nav className="navbar">
             <div className="navbar-left">
                 <img src={Logo} alt="Logo" className="site-logo" />
                 <span className="site-title">{title}</span>
@@ -46,6 +52,8 @@ export default function NavBar({ title = "Weather Forecasting", onSearch, onMenu
                 </button>
             </div>
         </nav>
+        </div>
+
     );
 }
 

@@ -1,0 +1,14 @@
+.site-title{
+    color:white;
+    font-size: var(--font-size-title);
+}
+
+.site-logo{
+    height:5rem;
+    width:5rem;
+}
+
+.navbar-left{
+    gap:2rem;
+}
+
