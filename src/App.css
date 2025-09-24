@@ -1,16 +1,84 @@
-/* Theme color variables */
+/* Theme color variables (inverted: dark background + light/white text) */
 :root {
-  --main-bg: #132a13;       /* Dark green */
-  --secondary-bg: #31572c;     /* Hunter green */
-  --accent: #4f772d;      /* Fern green */
-  --highlight: #90a955;         /* Moss green */
-  --muted: #ecf39e;        /* Mindaro */
-  --text-primary: #d7d7d7;       /* Main text color */
-  --text-secondary: #222;         /* Secondary text color */
+  --main-bg: linear-gradient(180deg, #053943 0%, #064f46 60%); /* deeper, vivid teal gradient */
+  --tertiary-bg: #d8f7ea; /* soft pastel green for tertiary panels/backgrounds */
+  --secondary-bg: #0f6b56;   /* brighter forest panel with more saturation */
+  --accent: #2fe79f;         /* fresher, punchy fern green */
+  --highlight: #61ffd0;      /* lively mint highlight for CTAs */
+  --muted: #0d4a40;          /* less muddy muted panel color */
+  --text-primary: #f4fff9;   /* near-white for strong contrast */
+  --text-secondary: #c9f5e8; /* pale, airy greenish gray */
+
+  /* Fibonacci-based font sizes (px -> rem at 16px base)
+    Sequence used: 55, 34, 21, 13 */
+  --font-size-title: 3.4375rem;       /* 55px */
+  --font-size-heading: 2.125rem;      /* 34px */
+  --font-size-mid: 1.3125rem;         /* 21px (one size in between) */
+  --font-size-paragraph: 0.8125rem;   /* 13px */
+
+  --line-height-tight: 1.05;
+  --line-height-normal: 1.35;
+  --line-height-relaxed: 1.6;
 }
 
+/* Glass-like elevated surface */
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  color: inherit;
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  box-shadow: 0 8px 24px rgba(2,8,20,0.45), 0 2px 6px rgba(2,8,20,0.22), inset 0 1px 0 rgba(255,255,255,0.03);
+  padding: 1rem;
+  transition: box-shadow 200ms ease, transform 120ms ease;
+  will-change: transform, box-shadow;
+}
+
+/* Elevation variants */
+.glass--sm {
+  backdrop-filter: blur(6px) saturate(110%);
+  -webkit-backdrop-filter: blur(6px) saturate(110%);
+  box-shadow: 0 4px 12px rgba(2,8,20,0.36), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.glass--md {
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  box-shadow: 0 10px 30px rgba(2,8,20,0.5), 0 3px 8px rgba(2,8,20,0.24), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.glass--lg {
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow: 0 18px 50px rgba(2,8,20,0.6), 0 6px 18px rgba(2,8,20,0.28), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Interaction feedback */
+.glass:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 50px rgba(2,8,20,0.62), 0 6px 18px rgba(2,8,20,0.3);
+}
+.glass:active {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(2,8,20,0.45);
+}
+
+/* Accessibility: reduced transparency/motion fallbacks */
+@media (prefers-reduced-transparency: reduce), (prefers-reduced-motion: reduce) {
+  .glass, .glass--sm, .glass--md, .glass--lg {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255,255,255,0.06);
+    box-shadow: 0 6px 18px rgba(2,8,20,0.45);
+    transform: none;
+    transition: none;
+  }
+}
 
 #root {
+  font-family: 'Bricolage Grotesque', sans-serif;
+  color:var(--text-primary);
   width: 100%;
   max-width: none;
   margin: 0;
@@ -18,14 +86,14 @@
   background: var(--main-bg);
   min-height: 100vh;
   text-align: left;
+
 }
 
 .app-container {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  background: var(--main-bg);
-  border-radius: 16px;
+  border-radius: 2rem;
   /* Removed box-shadow */
   padding: 2rem;
   box-sizing: border-box;
