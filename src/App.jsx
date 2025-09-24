@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import LoginPage from './login.jsx'
 import Temperature from './temperature.jsx'
+import LiveMapPage from './liveMapPage.jsx'
+<Route path="/live-map" element={<LiveMapPage />} />
+
 import Logo from '/Logo.svg'
 import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
+import LiveMap from './liveMap.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -70,38 +75,39 @@ function AttributeDetail({ name }) {
 }
 
 function App() {
-  return (
-    <Router>
-      <>
-       <Navbar title="Aether" />
+  const location = useLocation();
 
-        <div className="glass">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/temperature" element={<Temperature />} />
-            <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
-            <Route path="/wind" element={<AttributeDetail name="Wind" />} />
-            <Route path="/aqi" element={<AttributeDetail name="AQI" />} />
-            <Route path="/visibility" element={<AttributeDetail name="Visibility" />} />
-            <Route path="/surface-pressure" element={<AttributeDetail name="Surface Pressure" />} />
-            <Route path="/sealevel-pressure" element={<AttributeDetail name="Sealevel Pressure" />} />
-          </Routes>
-          {/* Map iFrame Section */}
+  // If on /live-map, render only the map page (full viewport)
+  if (location.pathname === '/live-map') {
+    return <LiveMapPage />;
+  }
+
+  // Otherwise, render the normal layout
+  return (
+    <>
+      <Navbar title="Aether" />
+      <div className="glass">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/temperature" element={<Temperature />} />
+          <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
+          <Route path="/wind" element={<AttributeDetail name="Wind" />} />
+          <Route path="/aqi" element={<AttributeDetail name="AQI" />} />
+          <Route path="/visibility" element={<AttributeDetail name="Visibility" />} />
+          <Route path="/surface-pressure" element={<AttributeDetail name="Surface Pressure" />} />
+          <Route path="/sealevel-pressure" element={<AttributeDetail name="Sealevel Pressure" />} />
+        </Routes>
+        {/* Map Section */}
+        <Link to="/live-map" style={{ textDecoration: 'none', color: 'inherit' }}>
           <section className="map-section">
-            <h2>Weather Map</h2>
-            <iframe
-              title="Weather Map"
-              src="https://your-map-site.example.com"
-              width="100%"
-              height="400"
-              style={{ border: 'none' }}
-            ></iframe>
+            <h2>Live Map</h2>
+            <LiveMap />
           </section>
-        </div>
-      </>
-    </Router>
-  )
+        </Link>
+      </div>
+    </>
+  );
 }
 
 export default App
