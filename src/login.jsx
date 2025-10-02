@@ -1,5 +1,6 @@
 // src/login.jsx
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import './login.css';
 
 function LoginPage() {
@@ -7,6 +8,7 @@ function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [errors, setErrors] = useState({});
     const [status, setStatus] = useState({ loading: false, message: "" });
+    const navigate = useNavigate();
 
     const validate = () => {
         const e = {};
@@ -35,7 +37,18 @@ function LoginPage() {
                 body: JSON.stringify(form),
             });
             if (!res.ok) throw new Error("Invalid credentials");
+            
+            // Store auth token (in a real app, get this from response)
+            const mockToken = 'mock_auth_token_' + Date.now();
+            localStorage.setItem('authToken', mockToken);
+            localStorage.setItem('user', JSON.stringify({ email: form.email }));
+            
             setStatus({ loading: false, message: "Logged in successfully." });
+            
+            // Redirect to home after 1 second
+            setTimeout(() => {
+                navigate('/');
+            }, 1000);
         } catch (err) {
             setStatus({ loading: false, message: err.message || "Login failed" });
         }
