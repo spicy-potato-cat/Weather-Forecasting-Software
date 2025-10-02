@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import 'ol/ol.css';
-import Map from 'ol/Map.js';
+import OLMap from 'ol/Map.js'; // Renamed to avoid collision with built-in Map
 import View from 'ol/View.js';
 import TileLayer from 'ol/layer/Tile.js';
 import OSM from 'ol/source/OSM.js';
@@ -137,14 +137,13 @@ const LiveMap = () => {
   // Open-Meteo hourly forecast at cell center -> { u, v, speed } m/s (east, north, magnitude)
   const fetchWindForCell = async (i, j) => {
     const key = `${i}:${j}`;
-    const cache = windCacheRef.current;
     
-    if (cache.has(key)) {
-      const entry = cache.get(key);
+    if (windCacheRef.current.has(key)) {
+      const entry = windCacheRef.current.get(key);
       if (Date.now() - entry.ts < CONFIG.CACHE_TTL_MS) {
         return entry;
       }
-      cache.delete(key);
+      windCacheRef.current.delete(key);
     }
     
     if (inflightRef.current.has(key)) return null;
@@ -179,19 +178,19 @@ const LiveMap = () => {
           const { u, v } = meteoToUV(speedMs, directionDeg);
           
           const entry = { ts: Date.now(), u, v, speed: speedMs };
-          cache.set(key, entry);
+          windCacheRef.current.set(key, entry);
           return entry;
         }
       }
       
       const entry = { ts: Date.now(), u: 0, v: 0, speed: 0 };
-      cache.set(key, entry);
+      windCacheRef.current.set(key, entry);
       return entry;
       
     } catch (err) {
       console.warn(`Wind fetch failed for ${key}:`, err);
       const entry = { ts: Date.now(), u: 0, v: 0, speed: 0 };
-      cache.set(key, entry);
+      windCacheRef.current.set(key, entry);
       return entry;
     } finally {
       inflightRef.current.delete(key);
@@ -220,14 +219,13 @@ const LiveMap = () => {
       `${i0}:${j1}`, `${i1}:${j1}`
     ];
 
-    const cache = windCacheRef.current;
     const values = new Array(4);
     for (let k = 0; k < 4; k++) {
       const key = keys[k];
-      let val = cache.get(key);
+      let val = windCacheRef.current.get(key);
       // Expire stale
       if (val && Date.now() - val.ts > CONFIG.CACHE_TTL_MS) {
-        cache.delete(key);
+        windCacheRef.current.delete(key);
         val = undefined;
       }
       if (!val) {
@@ -284,14 +282,12 @@ const LiveMap = () => {
     const iStep = Math.max(1, Math.floor(iCount / targetPerDim));
     const jStep = Math.max(1, Math.floor(jCount / targetPerDim));
 
-    const cache = windCacheRef.current;
-    const inflight = inflightRef.current;
     let fetched = 0;
     for (let jj = jMin; jj <= jMax; jj += jStep) {
       for (let ii = iMin; ii <= iMax; ii += iStep) {
         if (fetched >= CONFIG.PRIME_MAX_CELLS) break;
         const key = `${ii}:${jj}`;
-        if (!cache.has(key) && !inflight.has(key)) {
+        if (!windCacheRef.current.has(key) && !inflightRef.current.has(key)) {
           fetchWindForCell(ii, jj);
           fetched++;
         }
@@ -405,12 +401,8 @@ const LiveMap = () => {
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Start from clean containers
-    windCacheRef.current = new Map();
-    inflightRef.current = new Set();
-
     // Map
-    const map = new Map({
+    const map = new OLMap({
       target: mapRef.current,
       layers: [new TileLayer({ source: new OSM() })],
       view: new View({ center: [0, 0], zoom: 2 }),

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
 import Logo from '/cloud-white-icon.png';
-import "./NavBar.css";
+import "./navbar.css";
 
 
 // src/components/NavBar.jsx
