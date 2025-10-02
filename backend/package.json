@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "db:check": "node scripts/check-db.js",
+    "db:setup": "psql -U postgres -c \"CREATE DATABASE weather_forecast_db;\" && psql -U postgres -d weather_forecast_db -f database.sql",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

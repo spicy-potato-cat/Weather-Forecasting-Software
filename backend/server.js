@@ -12,6 +12,42 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Test database connection on startup
+import pool from './config/database.js';
+
+(async () => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    console.log('✅ Database connected successfully');
+    console.log(`📅 Server time: ${result.rows[0].now}`);
+  } catch (err) {
+    // Log error details server-side only
+    console.error('❌ Database connection failed');
+    console.error('Error:', err.message);
+    
+    // Provide troubleshooting hints
+    console.error('');
+    console.error('🔧 Troubleshooting:');
+    
+    if (err.message.includes('does not exist') && err.message.includes('role')) {
+      console.error(`   1. The database user "${process.env.DB_USER}" does not exist`);
+      console.error('   2. Check DB_USER in backend/.env file');
+      console.error('   3. Common usernames: postgres, root');
+      console.error('   4. Create user: psql -U postgres -c "CREATE USER your_username;"');
+    } else if (err.code === 'ECONNREFUSED') {
+      console.error('   1. PostgreSQL is not running');
+      console.error('   2. Start it: net start postgresql-x64-14 (Windows)');
+    } else if (err.code === '3D000') {
+      console.error(`   1. Database "${process.env.DB_NAME}" does not exist`);
+      console.error(`   2. Create it: psql -U postgres -c "CREATE DATABASE ${process.env.DB_NAME};"`);
+    }
+    
+    console.error('');
+    console.error('⚠️  Server will continue but database operations will fail');
+    console.error('');
+  }
+})();
+
 // =============================================================================
 // MIDDLEWARE
 // =============================================================================
@@ -75,7 +111,7 @@ app.listen(PORT, () => {
   console.log('='.repeat(50));
   console.log(`🚀 Server running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`📡 Listening on port ${PORT}`);
-  console.log(`🌐 API available at http://localhost:${PORT}/api`);
+  console.log(`🌐 API: http://localhost:${PORT}/api`);
   console.log('='.repeat(50));
 });
 

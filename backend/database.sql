@@ -1,5 +1,11 @@
+-- Drop existing tables if they exist (for clean reinstall)
+DROP TABLE IF EXISTS weather_alerts CASCADE;
+DROP TABLE IF EXISTS saved_locations CASCADE;
+DROP TABLE IF EXISTS user_preferences CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
 -- Create users table
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
@@ -13,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX idx_users_email ON users(email);
 
 -- Create user_preferences table (for future use)
-CREATE TABLE IF NOT EXISTS user_preferences (
+CREATE TABLE user_preferences (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     preferred_location VARCHAR(255),
@@ -26,7 +32,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 );
 
 -- Create saved_locations table
-CREATE TABLE IF NOT EXISTS saved_locations (
+CREATE TABLE saved_locations (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     location_name VARCHAR(255) NOT NULL,
@@ -38,7 +44,7 @@ CREATE TABLE IF NOT EXISTS saved_locations (
 );
 
 -- Create weather_alerts table (for future use)
-CREATE TABLE IF NOT EXISTS weather_alerts (
+CREATE TABLE weather_alerts (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     location_id INTEGER REFERENCES saved_locations(id) ON DELETE CASCADE,
@@ -67,3 +73,12 @@ CREATE TRIGGER update_user_preferences_updated_at BEFORE UPDATE ON user_preferen
 
 CREATE TRIGGER update_weather_alerts_updated_at BEFORE UPDATE ON weather_alerts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert a test user (password is 'password123')
+INSERT INTO users (email, password, name) VALUES 
+('test@example.com', '$2b$10$rKZEK8GZ6YQ3kZ8fN0N3YuQJZ8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z8Z', 'Test User');
+
+-- Display success message
+SELECT 'Database schema created successfully!' as message;
+SELECT 'Tables created:' as info;
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;

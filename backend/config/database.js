@@ -11,23 +11,34 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection cannot be established
+  password: process.env.DB_PASSWORD || '', // Empty string if no password
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
 // Test database connection
 pool.on('connect', () => {
-  console.log('Database connected successfully');
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Database connected successfully');
+  }
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected database error:', err);
-  process.exit(-1);
+  // Log error server-side only, don't expose to client
+  console.error('Database pool error:', err.message);
+  
+  if (err.code === 'ECONNREFUSED') {
+    console.error('PostgreSQL is not running. Start it with:');
+    console.error('   Windows: net start postgresql-x64-14');
+  } else if (err.code === '28P01') {
+    console.error('Authentication failed. Check DB_USER and DB_PASSWORD in .env');
+  } else if (err.code === '3D000') {
+    console.error(`Database "${process.env.DB_NAME}" does not exist`);
+  }
 });
 
-// Query helper function
+// Query helper function with sanitized error messages for client
 export const query = async (text, params) => {
   const start = Date.now();
   try {
@@ -40,8 +51,25 @@ export const query = async (text, params) => {
     
     return res;
   } catch (error) {
-    console.error('Database query error:', error);
-    throw error;
+    // Log detailed error server-side
+    console.error('Database query error:', error.message);
+    console.error('Error code:', error.code);
+    
+    // Provide helpful hints server-side only
+    if (error.code === 'ECONNREFUSED') {
+      console.error('PostgreSQL is not running');
+    } else if (error.code === '3D000') {
+      console.error(`Database "${process.env.DB_NAME}" does not exist`);
+    } else if (error.code === '28P01') {
+      console.error('Authentication failed - check credentials');
+    } else if (error.code === '28000') {
+      console.error('Role does not exist - check DB_USER in .env');
+    }
+    
+    // Throw a sanitized error for the client (no internal details)
+    const sanitizedError = new Error('Account Creation Failed!');
+    sanitizedError.isOperational = true;
+    throw sanitizedError;
   }
 };
 
