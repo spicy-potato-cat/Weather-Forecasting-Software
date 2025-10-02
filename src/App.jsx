@@ -4,10 +4,10 @@ import { Link } from 'react-router-dom'
 import LoginPage from './login.jsx'
 import Temperature from './temperature.jsx'
 import LiveMapPage from './liveMapPage.jsx'
+import LiveMap from './liveMap.jsx'
 import Logo from '/Logo.svg'
 import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
-import LiveMap from './liveMap.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -96,16 +96,12 @@ function App() {
           <Route path="/surface-pressure" element={<AttributeDetail name="Surface Pressure" />} />
           <Route path="/sealevel-pressure" element={<AttributeDetail name="Sealevel Pressure" />} />
         </Routes>
-        {/* Map Section - Note: This LiveMap doesn't have selectedLayers prop, so wind won't work here */}
-        {/* Use the /live-map route instead for full wind functionality */}
-        <Link to="/live-map" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <section className="map-section">
-            <h2>Live Map</h2>
-            <div style={{ width: '100%', height: '400px' }}>
-              <p style={{ padding: '20px', textAlign: 'center' }}>Click to open full interactive map</p>
-            </div>
-          </section>
-        </Link>
+        
+        {/* Map Section - Embedded interactive map */}
+        <section className="map-section">
+          <h2>Live Map</h2>
+          <LiveMap />
+        </section>
       </div>
     </>
   );

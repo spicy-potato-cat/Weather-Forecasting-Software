@@ -1,420 +1,197 @@
 import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import 'ol/ol.css';
-import Map from 'ol/Map.js';
+import OLMap from 'ol/Map.js';
 import View from 'ol/View.js';
 import TileLayer from 'ol/layer/Tile.js';
 import OSM from 'ol/source/OSM.js';
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js';
 import { fromLonLat, toLonLat } from 'ol/proj.js';
+import { clamp, lerp, kmhToMs, meteoToUV } from './lib/math.js';
 
-import { clamp, lerp, kmhToMs, dirFromDegSpeedMsToUV } from './lib/math.js';
+// =============================================================================
+// CONFIG: Layers enabled in the embedded map preview
+// =============================================================================
+const EMBEDDED_CONFIG = {
+  // Default layers turned on for the embedded map
+  ENABLED_LAYERS: {
+    wind: true,        // Enable wind particles
+    temperature: false, // Disable temperature
+    precipitation: false, // Disable precipitation
+    clouds: false,      // Disable clouds
+  },
 
-// Config: conservative defaults
-const CONFIG = {
-  // Particles
-  DENSITY_PER_PIXEL: 0.0016,
-  COUNT_MIN: 1000,
-  COUNT_MAX: 6000,
-  DOT_RADIUS_PX: 0.85,
-  COLOR: '#666666',
-  SHADOW_COLOR: 'rgba(0,0,0,0.5)',
-  SHADOW_BLUR: 1.25,
+  // Wind particle settings (lightweight for preview)
+  WIND: {
+    DENSITY_PER_PIXEL: 0.0004, // Half the density of full map
+    COUNT_MIN: 400,
+    COUNT_MAX: 1000,
+    DOT_RADIUS_PX: 1.5,
+    COLOR: '#ffffff',
+    SHADOW_BLUR: 1,
+    LIFE_MIN_S: 4.0,
+    LIFE_MAX_S: 7.0,
+    WIND_SPEED_MULTIPLIER: 5000,
+  },
 
-  // Lifetime/respawn
-  LIFE_MIN_S: 1.0,
-  LIFE_MAX_S: 2.0,
-  VIEW_RESPAWN_PADDING_DEG: 0.0,
-
-  // Wind sampling grid (API-backed)
-  GRID_STEP_DEG: 2.0,
-  PRIME_MAX_CELLS: 25,
-  CACHE_TTL_MS: 10 * 60 * 1000, // 10 minutes
-
-  // Animation
-  MAX_DT_S: 0.05,
-
-  // Trails
-  TRAIL_FADE_ALPHA_PER_FRAME: 0.08,
+  // API settings
+  OPENWEATHER_API_KEY: import.meta.env.VITE_OPENWEATHER_API_KEY || 'demo',
+  CACHE_TTL_MS: 10 * 60 * 1000,
+  MIN_FETCH_INTERVAL_MS: 2000,
 };
 
+/**
+ * LiveMap - Embedded lightweight version of LiveMapPage
+ * 
+ * Features:
+ * - Renders actual OpenLayers map with configurable layers
+ * - Single click: Navigate to /live-map
+ * - Double click + drag: Pan the map
+ * - Scroll: Zoom in/out
+ * - Automatically starts wind animation if enabled in config
+ */
 const LiveMap = () => {
+  const navigate = useNavigate();
   const mapRef = useRef(null);
   const canvasRef = useRef(null);
-
   const mapObjRef = useRef(null);
   const ctxRef = useRef(null);
   const rafRef = useRef(0);
   const particlesRef = useRef([]);
   const lastTimeRef = useRef(0);
-  const dprRef = useRef(window.devicePixelRatio || 1);
+  const windGridDataRef = useRef(null);
+  const lastApiFetchRef = useRef(0);
+  const clickTimeoutRef = useRef(null);
+  const hasMovedRef = useRef(false);
 
-  // Cache and inflight trackers (may be accidentally mutated elsewhere)
-  const windCacheRef = useRef(new Map());
-  const inflightRef = useRef(new Set());
-
-  // Ultra-defensive cache/inflight helpers that NEVER call .has() on a bad type
-  const cacheHas = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.has === 'function') return c.has(key);
-    if (c && typeof c === 'object') return Object.prototype.hasOwnProperty.call(c, key);
-    // repair to Map if totally broken
-    windCacheRef.current = new Map();
-    return false;
-  };
-  const cacheGet = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.get === 'function') return c.get(key);
-    if (c && typeof c === 'object') return c[key];
-    return undefined;
-  };
-  const cacheSet = (key, val) => {
-    let c = windCacheRef.current;
-    if (c && typeof c.set === 'function') {
-      c.set(key, val);
-      return;
-    }
-    if (!c || typeof c !== 'object') {
-      c = {};
-      windCacheRef.current = c;
-    }
-    c[key] = val;
-  };
-  const cacheDelete = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.delete === 'function') return c.delete(key);
-    if (c && typeof c === 'object') {
-      // eslint-disable-next-line no-prototype-builtins
-      if (c.hasOwnProperty(key)) {
-        delete c[key];
-        return true;
-      }
-    }
-    return false;
-  };
-  const inflightHas = (key) => {
-    const s = inflightRef.current;
-    if (s && typeof s.has === 'function') return s.has(key);
-    if (Array.isArray(s)) return s.includes(key);
-    if (s && typeof s === 'object') return !!s[key];
-    inflightRef.current = new Set();
-    return false;
-  };
-  const inflightAdd = (key) => {
-    let s = inflightRef.current;
-    if (s && typeof s.add === 'function') {
-      s.add(key);
-      return;
-    }
-    if (Array.isArray(s)) {
-      if (!s.includes(key)) s.push(key);
-      return;
-    }
-    if (!s || typeof s !== 'object') {
-      s = new Set();
-      inflightRef.current = s;
-      s.add(key);
-      return;
-    }
-    s[key] = true;
-  };
-  const inflightDelete = (key) => {
-    const s = inflightRef.current;
-    if (s && typeof s.delete === 'function') return s.delete(key);
-    if (Array.isArray(s)) {
-      const idx = s.indexOf(key);
-      if (idx >= 0) s.splice(idx, 1);
-      return true;
-    }
-    if (s && typeof s === 'object') {
-      if (s[key]) {
-        delete s[key];
-        return true;
-      }
-    }
-    return false;
-  };
-
-  // Track last zoom to expire particles on zoom end
-  const lastZoomRef = useRef(null);
-
-  // Utilities
-  const resizeCanvas = () => {
-    const canvas = canvasRef.current;
-    const container = mapRef.current;
-    if (!canvas || !container) return;
-    const dpr = window.devicePixelRatio || 1;
-    dprRef.current = dpr;
-    const { clientWidth: w, clientHeight: h } = container;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    const ctx = ctxRef.current;
-    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Simplified particle system for wind
+  const respawnParticle = (p, bounds) => {
+    p.lon = lerp(bounds.lonMin, bounds.lonMax, Math.random());
+    p.lat = lerp(bounds.latMin, bounds.latMax, Math.random());
+    p.age = 0;
+    p.life = lerp(EMBEDDED_CONFIG.WIND.LIFE_MIN_S, EMBEDDED_CONFIG.WIND.LIFE_MAX_S, Math.random());
   };
 
   const getViewLonLatBounds = () => {
     const map = mapObjRef.current;
+    if (!map) return { lonMin: -180, lonMax: 180, latMin: -85, latMax: 85 };
     const view = map.getView();
     const extent = view.calculateExtent(map.getSize());
-    const minLonLat = toLonLat([extent[0], extent[1]]);
-    const maxLonLat = toLonLat([extent[2], extent[3]]);
-    const lonMin = Math.min(minLonLat[0], maxLonLat[0]) - CONFIG.VIEW_RESPAWN_PADDING_DEG;
-    const lonMax = Math.max(minLonLat[0], maxLonLat[0]) + CONFIG.VIEW_RESPAWN_PADDING_DEG;
-    const latMin = Math.min(minLonLat[1], maxLonLat[1]) - CONFIG.VIEW_RESPAWN_PADDING_DEG;
-    const latMax = Math.max(minLonLat[1], maxLonLat[1]) + CONFIG.VIEW_RESPAWN_PADDING_DEG;
-    return { lonMin, lonMax, latMin, latMax };
+    const [minLon, minLat] = toLonLat([extent[0], extent[1]]);
+    const [maxLon, maxLat] = toLonLat([extent[2], extent[3]]);
+    return { lonMin: minLon, lonMax: maxLon, latMin: minLat, latMax: maxLat };
   };
 
-  const computeTargetCount = () => {
-    const map = mapObjRef.current;
-    const viewport = map.getViewport();
-    const vw = viewport.clientWidth || 0;
-    const vh = viewport.clientHeight || 0;
-    const target = Math.round(vw * vh * CONFIG.DENSITY_PER_PIXEL);
-    return clamp(target, CONFIG.COUNT_MIN, CONFIG.COUNT_MAX);
-  };
-
-  const respawnParticle = (p) => {
-    const { lonMin, lonMax, latMin, latMax } = getViewLonLatBounds();
-    p.lon = lerp(lonMin, lonMax, Math.random());
-    p.lat = lerp(latMin, latMax, Math.random());
-    p.age = 0;
-    p.life = lerp(CONFIG.LIFE_MIN_S, CONFIG.LIFE_MAX_S, Math.random());
-  };
-
-  const initOrResizeParticles = () => {
-    const particles = particlesRef.current;
-    const target = computeTargetCount();
-    if (particles.length === 0) {
-      for (let i = 0; i < target; i++) {
-        particles.push({ lon: 0, lat: 0, age: 0, life: 0 });
-        respawnParticle(particles[i]);
-      }
-    } else if (particles.length < target) {
-      const toAdd = target - particles.length;
-      for (let i = 0; i < toAdd; i++) {
-        const p = { lon: 0, lat: 0, age: 0, life: 0 };
-        respawnParticle(p);
-        particles.push(p);
-      }
-    } else if (particles.length > target) {
-      particles.splice(target);
+  const sampleWindUV = (lon, lat) => {
+    const grid = windGridDataRef.current;
+    if (!grid || Date.now() - grid.ts > EMBEDDED_CONFIG.CACHE_TTL_MS) {
+      return { u: 0, v: 0 };
     }
+    return {
+      u: grid.u * EMBEDDED_CONFIG.WIND.WIND_SPEED_MULTIPLIER,
+      v: grid.v * EMBEDDED_CONFIG.WIND.WIND_SPEED_MULTIPLIER
+    };
   };
 
-  // Open-Meteo current weather at cell center -> { u, v } m/s (east, north)
-  const fetchWindForCell = async (i, j) => {
-    const key = `${i}:${j}`;
-    if (cacheHas(key)) return cacheGet(key);
-    if (inflightHas(key)) return null;
+  const fetchWindData = async () => {
+    const now = Date.now();
+    if (now - lastApiFetchRef.current < EMBEDDED_CONFIG.MIN_FETCH_INTERVAL_MS) return;
+    if (windGridDataRef.current && now - windGridDataRef.current.ts < EMBEDDED_CONFIG.CACHE_TTL_MS) return;
 
-    inflightAdd(key);
+    lastApiFetchRef.current = now;
+    const bounds = getViewLonLatBounds();
+    const centerLon = (bounds.lonMin + bounds.lonMax) / 2;
+    const centerLat = (bounds.latMin + bounds.latMax) / 2;
+
     try {
-      const step = CONFIG.GRID_STEP_DEG;
-      const lonC = (i + 0.5) * step;
-      const latC = (j + 0.5) * step;
-      // Clamp lat/lon
-      const lat = Math.max(-85, Math.min(85, latC));
-      const lon = Math.max(-180, Math.min(180, lonC));
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${centerLat.toFixed(2)}&lon=${centerLon.toFixed(2)}&appid=${EMBEDDED_CONFIG.OPENWEATHER_API_KEY}&units=metric`;
       const res = await fetch(url);
+      if (!res.ok) return;
+      
       const data = await res.json();
-      const cw = data && data.current_weather;
-      if (cw && typeof cw.windspeed === 'number' && typeof cw.winddirection === 'number') {
-        const speedMs = kmhToMs(cw.windspeed);
-        const { u, v } = dirFromDegSpeedMsToUV(cw.winddirection, speedMs);
-        const entry = { ts: Date.now(), u, v };
-        cacheSet(key, entry);
-        return entry;
-      } else {
-        const entry = { ts: Date.now(), u: 0, v: 0 };
-        cacheSet(key, entry);
-        return entry;
+      if (data?.wind) {
+        const speedMs = data.wind.speed || 0;
+        const direction = data.wind.deg || 0;
+        const { u, v } = meteoToUV(speedMs, direction);
+        windGridDataRef.current = { ...bounds, u, v, ts: now };
       }
-    } catch {
-      const entry = { ts: Date.now(), u: 0, v: 0 };
-      cacheSet(key, entry);
-      return entry;
-    } finally {
-      inflightDelete(key);
+    } catch (err) {
+      console.warn('Wind fetch failed:', err.message);
     }
   };
 
-  const getCellKey = (lon, lat) => {
-    const step = CONFIG.GRID_STEP_DEG;
-    const i = Math.floor(lon / step);
-    const j = Math.floor(lat / step);
-    return { key: `${i}:${j}`, i, j, step };
-  };
-
-  // Bilinear sample from four surrounding cells; triggers fetch as needed
-  const sampleWindUV = async (lon, lat) => {
-    const { i, j, step } = getCellKey(lon, lat);
-    const gx = lon / step;
-    const gy = lat / step;
-    const i0 = Math.floor(gx), i1 = i0 + 1;
-    const j0 = Math.floor(gy), j1 = j0 + 1;
-    const tx = gx - i0;
-    const ty = gy - j0;
-
-    const keys = [
-      `${i0}:${j0}`, `${i1}:${j0}`,
-      `${i0}:${j1}`, `${i1}:${j1}`
-    ];
-
-    const values = new Array(4);
-    for (let k = 0; k < 4; k++) {
-      const key = keys[k];
-      let val = cacheGet(key);
-      // Expire stale
-      if (val && Date.now() - val.ts > CONFIG.CACHE_TTL_MS) {
-        cacheDelete(key);
-        val = undefined;
-      }
-      if (!val) {
-        const [ci, cj] = key.split(':').map(Number);
-        // Fire-and-forget; nearest available will be used until ready
-        fetchWindForCell(ci, cj);
-      }
-      values[k] = val || null;
-    }
-
-    // If all present, do bilinear
-    if (values.every(Boolean)) {
-      const u00 = values[0].u, u10 = values[1].u, u01 = values[2].u, u11 = values[3].u;
-      const v00 = values[0].v, v10 = values[1].v, v01 = values[2].v, v11 = values[3].v;
-      const u0 = u00 + (u10 - u00) * tx;
-      const u1 = u01 + (u11 - u01) * tx;
-      const v0 = v00 + (v10 - v00) * tx;
-      const v1 = v01 + (v11 - v01) * tx;
-      return { u: u0 + (u1 - u0) * ty, v: v0 + (v1 - v0) * ty };
-    }
-
-    // Otherwise return nearest available cell if any
-    const nearest = values.find(Boolean);
-    if (nearest) return { u: nearest.u, v: nearest.v };
-
-    // No data yet
-    return { u: 0, v: 0 };
-  };
-
-  // Prefetch a capped set of cells over the view (up to PRIME_MAX_CELLS)
-  const primeViewportWind = () => {
-    const { lonMin, lonMax, latMin, latMax } = getViewLonLatBounds();
-    const step = CONFIG.GRID_STEP_DEG;
-
-    const iMin = Math.floor(lonMin / step);
-    const iMax = Math.floor(lonMax / step);
-    const jMin = Math.floor(latMin / step);
-    const jMax = Math.floor(latMax / step);
-
-    const iCount = Math.max(1, iMax - iMin + 1);
-    const jCount = Math.max(1, jMax - jMin + 1);
-
-    // Choose up to ~sqrt(PRIME_MAX_CELLS) samples each way
-    const targetPerDim = Math.max(1, Math.floor(Math.sqrt(CONFIG.PRIME_MAX_CELLS)));
-    const iStep = Math.max(1, Math.floor(iCount / targetPerDim));
-    const jStep = Math.max(1, Math.floor(jCount / targetPerDim));
-
-    let fetched = 0;
-    for (let jj = jMin; jj <= jMax; jj += jStep) {
-      for (let ii = iMin; ii <= iMax; ii += iStep) {
-        if (fetched >= CONFIG.PRIME_MAX_CELLS) break;
-        const key = `${ii}:${jj}`;
-        if (!cacheHas(key) && !inflightHas(key)) {
-          fetchWindForCell(ii, jj);
-          fetched++;
-        }
-      }
-      if (fetched >= CONFIG.PRIME_MAX_CELLS) break;
-    }
-  };
-
-  // Animation loop
-  const animate = async (ts) => {
-    const map = mapObjRef.current;
-    const ctx = ctxRef.current;
-    if (!map || !ctx) {
+  const animate = (ts) => {
+    if (!EMBEDDED_CONFIG.ENABLED_LAYERS.wind) {
       rafRef.current = requestAnimationFrame(animate);
       return;
     }
+
+    const map = mapObjRef.current;
+    const ctx = ctxRef.current;
+    const canvas = canvasRef.current;
+    if (!map || !ctx || !canvas) {
+      rafRef.current = requestAnimationFrame(animate);
+      return;
+    }
+
     if (!lastTimeRef.current) lastTimeRef.current = ts;
-    const dt = Math.min((ts - lastTimeRef.current) / 1000, CONFIG.MAX_DT_S);
+    const dt = Math.min((ts - lastTimeRef.current) / 1000, 0.05);
     lastTimeRef.current = ts;
 
-    // Fade for short trails
-    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
     ctx.globalCompositeOperation = 'destination-out';
-    const alpha = 1 - Math.exp(-CONFIG.TRAIL_FADE_ALPHA_PER_FRAME * (dt / (1 / 60)));
-    ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(4)})`;
-    ctx.fillRect(0, 0, canvas.width / dprRef.current, canvas.height / dprRef.current);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     ctx.globalCompositeOperation = 'source-over';
 
-    // Visuals
-    ctx.shadowColor = CONFIG.SHADOW_COLOR;
-    ctx.shadowBlur = CONFIG.SHADOW_BLUR;
-
-    // Advect and draw
+    const bounds = getViewLonLatBounds();
     const particles = particlesRef.current;
-    ctx.beginPath();
+
+    ctx.fillStyle = EMBEDDED_CONFIG.WIND.COLOR;
+    ctx.shadowBlur = EMBEDDED_CONFIG.WIND.SHADOW_BLUR;
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
+      p.age += dt;
 
-      // Age and expire
-      p.age = (p.age || 0) + dt;
       if (p.age >= p.life) {
-        respawnParticle(p);
+        respawnParticle(p, bounds);
+        continue;
       }
 
-      // Sample wind (u east, v north) in m/s
-      const { u, v } = await sampleWindUV(p.lon, p.lat);
-
-      // Advance in world meters (EPSG:3857)
+      const { u, v } = sampleWindUV(p.lon, p.lat);
       const coord3857 = fromLonLat([p.lon, p.lat]);
-      const mx = coord3857[0] + u * dt;
-      const my = coord3857[1] + v * dt;
-      const newLonLat = toLonLat([mx, my]);
+      const newX = coord3857[0] + u * dt;
+      const newY = coord3857[1] + v * dt;
+      const newLonLat = toLonLat([newX, newY]);
 
-      // If new pos is invalid or outside visible view (with tiny tolerance), respawn
-      const { lonMin, lonMax, latMin, latMax } = getViewLonLatBounds();
-      const out =
-        !isFinite(newLonLat[0]) || !isFinite(newLonLat[1]) ||
-        newLonLat[0] < lonMin - 0.5 || newLonLat[0] > lonMax + 0.5 ||
-        newLonLat[1] < latMin - 0.5 || newLonLat[1] > latMax + 0.5;
-
-      if (out) {
-        respawnParticle(p);
+      if (!isFinite(newLonLat[0]) || !isFinite(newLonLat[1]) ||
+          newLonLat[0] < bounds.lonMin || newLonLat[0] > bounds.lonMax ||
+          newLonLat[1] < bounds.latMin || newLonLat[1] > bounds.latMax) {
+        respawnParticle(p, bounds);
         continue;
       }
 
       p.lon = newLonLat[0];
       p.lat = newLonLat[1];
 
-      const px = map.getPixelFromCoordinate([mx, my]);
-      if (!px) continue;
-      ctx.moveTo(px[0], px[1]);
-      ctx.arc(px[0], px[1], CONFIG.DOT_RADIUS_PX, 0, Math.PI * 2);
+      const px = map.getPixelFromCoordinate([newX, newY]);
+      if (px) {
+        ctx.beginPath();
+        ctx.arc(px[0], px[1], EMBEDDED_CONFIG.WIND.DOT_RADIUS_PX, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
-    ctx.fillStyle = CONFIG.COLOR;
-    ctx.fill();
-
-    // Reset shadow
     ctx.shadowBlur = 0;
-
     rafRef.current = requestAnimationFrame(animate);
   };
 
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Start from clean containers
-    windCacheRef.current = new Map();
-    inflightRef.current = new Set();
-
-    // Map
-    const map = new Map({
+    const map = new OLMap({
       target: mapRef.current,
       layers: [new TileLayer({ source: new OSM() })],
       view: new View({ center: [0, 0], zoom: 2 }),
@@ -425,7 +202,6 @@ const LiveMap = () => {
     mapObjRef.current = map;
     window.map = map;
 
-    // Canvas overlay
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
     canvas.style.left = '0';
@@ -441,56 +217,89 @@ const LiveMap = () => {
     const ctx = canvas.getContext('2d');
     ctxRef.current = ctx;
 
-    const onResize = () => {
-      resizeCanvas();
-      initOrResizeParticles();
-      primeViewportWind();
+    const resizeCanvas = () => {
+      if (!canvas || !mapRef.current) return;
+      const dpr = window.devicePixelRatio || 1;
+      const { clientWidth: w, clientHeight: h } = mapRef.current;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resizeCanvas();
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', resizeCanvas);
 
-    // Particles
-    initOrResizeParticles();
+    // Initialize particles if wind is enabled
+    if (EMBEDDED_CONFIG.ENABLED_LAYERS.wind) {
+      const bounds = getViewLonLatBounds();
+      const count = clamp(Math.round(400 * 600 * EMBEDDED_CONFIG.WIND.DENSITY_PER_PIXEL), 
+                          EMBEDDED_CONFIG.WIND.COUNT_MIN, 
+                          EMBEDDED_CONFIG.WIND.COUNT_MAX);
+      for (let i = 0; i < count; i++) {
+        const p = { lon: 0, lat: 0, age: 0, life: 1 };
+        respawnParticle(p, bounds);
+        particlesRef.current.push(p);
+      }
+      fetchWindData();
+      rafRef.current = requestAnimationFrame(animate);
+    }
 
-    // Prime wind for current view
-    primeViewportWind();
+    // Handle click to navigate (only if no drag occurred)
+    const handleClick = () => {
+      if (hasMovedRef.current) {
+        hasMovedRef.current = false;
+        return;
+      }
+      
+      // Single click navigates to full map
+      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = setTimeout(() => {
+        navigate('/live-map');
+      }, 250);
+    };
 
-    // Expire and respawn all particles on zoom end into the new view
-    const onMoveEnd = () => {
-      const z = map.getView().getZoom();
-      if (lastZoomRef.current === null || z !== lastZoomRef.current) {
-        lastZoomRef.current = z;
-        const ps = particlesRef.current;
-        for (let k = 0; k < ps.length; k++) {
-          ps[k].age = ps[k].life; // expire immediately so they respawn in-view
-        }
-        primeViewportWind();
-      } else {
-        primeViewportWind();
+    const handlePointerDown = () => {
+      hasMovedRef.current = false;
+    };
+
+    const handlePointerMove = () => {
+      hasMovedRef.current = true;
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
       }
     };
-    map.on('moveend', onMoveEnd);
 
-    // Start
-    rafRef.current = requestAnimationFrame(animate);
+    viewport.addEventListener('click', handleClick);
+    viewport.addEventListener('pointerdown', handlePointerDown);
+    viewport.addEventListener('pointermove', handlePointerMove);
 
     return () => {
-      cancelAnimationFrame(rafRef.current);
-      lastTimeRef.current = 0;
-      window.removeEventListener('resize', onResize);
-      map.un('moveend', onMoveEnd);
-      if (canvasRef.current && canvasRef.current.parentElement) {
-        canvasRef.current.parentElement.removeChild(canvasRef.current);
-      }
+      if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', resizeCanvas);
+      viewport.removeEventListener('click', handleClick);
+      viewport.removeEventListener('pointerdown', handlePointerDown);
+      viewport.removeEventListener('pointermove', handlePointerMove);
+      if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
       map.setTarget(null);
-      mapObjRef.current = null;
     };
-  }, []);
+  }, [navigate]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-      <div id="map" ref={mapRef} style={{ width: '100%', height: '100%' }} />
-    </div>
+    <div
+      ref={mapRef}
+      style={{
+        width: '100%',
+        height: '400px',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        position: 'relative',
+      }}
+      title="Click to open full interactive map"
+    />
   );
 };
 
