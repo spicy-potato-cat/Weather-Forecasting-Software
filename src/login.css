@@ -127,6 +127,15 @@
     cursor: not-allowed;
 }
 
+.signup-submit {
+    background: #2fe79f;
+    color: #053943;
+}
+
+.signup-submit:hover:not(:disabled) {
+    background: #61ffd0;
+}
+
 .login-notice {
     margin-top: 0.25rem;
     padding: 0.75rem 1rem;
@@ -135,6 +144,18 @@
     font-size: 0.9rem;
     color: #c9f5e8;
     border: 1px solid #2fe79f;
+}
+
+.login-notice-success {
+    background: rgba(47, 231, 159, 0.15);
+    color: #61ffd0;
+    border-color: #2fe79f;
+}
+
+.login-notice-error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border-color: #ef4444;
 }
 
 .login-footer {

@@ -264,3 +264,17 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Loading spinner */
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(47, 231, 159, 0.3);
+  border-top-color: #2fe79f;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

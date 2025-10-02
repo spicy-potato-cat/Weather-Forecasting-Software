@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import LoginPage from './login.jsx'
+import SignupPage from './signup.jsx'
 import Temperature from './temperature.jsx'
 import LiveMapPage from './liveMapPage.jsx'
 import LiveMap from './liveMap.jsx'
 import Logo from '/Logo.svg'
 import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
+import ProfilePage from './profile.jsx'
+import WeatherDetail from './weatherDetail.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -20,10 +23,166 @@ const attributes = [
   { name: 'Sealevel Pressure', path: '/sealevel-pressure' },
 ]
 
-// Dashboard skeleton component
+// Enhanced Dashboard with live data and auto-location
 function Dashboard() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState('Temperature')
+  const [weatherData, setWeatherData] = useState(null)
+  const [location, setLocation] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [aqiData, setAqiData] = useState(null);
+
+  useEffect(() => {
+    getUserLocation()
+  }, [])
+
+  useEffect(() => {
+    if (location) {
+      fetchWeatherData()
+    }
+  }, [location])
+
+  const getUserLocation = async () => {
+    setLoading(true)
+    try {
+      // Try geolocation API first
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            
+            // Get city name from coordinates
+            const cityName = await getCityName(latitude, longitude);
+            
+            setLocation({
+              lat: latitude,
+              lon: longitude,
+              name: cityName
+            });
+          },
+          async (error) => {
+            console.log('Geolocation denied, using IP-based location');
+            await getLocationFromIP();
+          }
+        );
+      } else {
+        await getLocationFromIP();
+      }
+    } catch (err) {
+      console.error('Location detection failed:', err);
+      setLocation({ name: 'Mumbai', lat: 19.0760, lon: 72.8777 });
+      setLoading(false);
+    }
+  };
+
+  const getLocationFromIP = async () => {
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      if (!res.ok) throw new Error('IP location failed');
+      
+      const data = await res.json();
+      
+      setLocation({
+        lat: data.latitude,
+        lon: data.longitude,
+        name: data.city || data.region || 'Unknown'
+      });
+    } catch (err) {
+      console.error('IP location failed:', err);
+      setLocation({ name: 'Mumbai', lat: 19.0760, lon: 72.8777 });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getCityName = async (lat, lon) => {
+    try {
+      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+      const res = await fetch(
+        `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${apiKey}`
+      );
+      
+      if (!res.ok) throw new Error('Reverse geocoding failed');
+      
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return data[0].name || 'Current Location';
+      }
+      return 'Current Location';
+    } catch (err) {
+      console.error('City name fetch failed:', err);
+      return 'Current Location';
+    }
+  };
+
+  const fetchWeatherData = async () => {
+    if (!location) return;
+    
+    try {
+      const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY
+      
+      // Fetch regular weather data
+      const weatherRes = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${location.lat}&lon=${location.lon}&appid=${apiKey}&units=metric`
+      )
+      if (weatherRes.ok) {
+        const data = await weatherRes.json()
+        setWeatherData(data)
+      }
+
+      // Fetch AQI data separately
+      const aqiRes = await fetch(
+        `https://api.openweathermap.org/data/2.5/air_pollution?lat=${location.lat}&lon=${location.lon}&appid=${apiKey}`
+      )
+      if (aqiRes.ok) {
+        const data = await aqiRes.json()
+        if (data?.list && data.list.length > 0) {
+          const aqiValue = data.list[0].main.aqi
+          const aqiScaled = aqiValue * 50 // Scale to 0-250
+          setAqiData({ aqi: aqiScaled, pm25: data.list[0].components?.pm2_5 || 0 })
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch weather:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getValue = () => {
+    if (!weatherData) return '--'
+
+    switch (selected) {
+      case 'Temperature':
+        return `${weatherData.main.temp.toFixed(1)}°C`
+      case 'Precipitation':
+        return `${weatherData.main.humidity}% humidity`
+      case 'Wind':
+        return `${(weatherData.wind.speed * 3.6).toFixed(1)} km/h`
+      case 'AQI':
+        return aqiData ? `${Math.round(aqiData.aqi)} AQI` : 'Loading...'
+      case 'Visibility':
+        return `${(weatherData.visibility / 1000).toFixed(1)} km`
+      case 'Surface Pressure':
+        return `${weatherData.main.pressure} hPa`
+      case 'Sealevel Pressure':
+        return `${weatherData.main.sea_level || weatherData.main.pressure} hPa`
+      default:
+        return '--'
+    }
+  }
+
+  if (loading) {
+    return (
+      <section className="dashboard">
+        <h2>Dashboard</h2>
+        <div style={{ textAlign: 'center', padding: '3rem', color: '#c9f5e8' }}>
+          <div className="loading-spinner" style={{ margin: '0 auto 1rem' }}></div>
+          <p>Detecting your location...</p>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="dashboard">
@@ -52,23 +211,10 @@ function Dashboard() {
         style={{ cursor: 'pointer' }}
         title={`View ${selected} details`}
       >
-        <p>Location: --</p>
-        <p>{selected}: --</p>
+        <p>Location: {weatherData ? `${weatherData.name}, ${weatherData.sys.country}` : location?.name || '--'}</p>
+        <p>{selected}: {getValue()}</p>
       </div>
     </section>
-  )
-}
-
-// Placeholder detail pages for each attribute
-function AttributeDetail({ name }) {
-  return (
-    <>
-      <Navbar />
-      <div className="attribute-detail">
-        <h3>{name} Details</h3>
-        <p>Details for {name} will be shown here.</p>
-      </div>
-    </>
   )
 }
 
@@ -80,9 +226,17 @@ function App() {
     return <LiveMapPage />;
   }
 
-  // If on /login, render only the login page
+  // If on /login or /signup, render only the auth page
   if (location.pathname === '/login') {
     return <LoginPage />;
+  }
+
+  if (location.pathname === '/signup') {
+    return <SignupPage />;
+  }
+
+  if (location.pathname === '/profile') {
+    return <ProfilePage />;
   }
 
   // Otherwise, render the normal layout
@@ -92,13 +246,13 @@ function App() {
       <div className="glass">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/temperature" element={<Temperature />} />
-          <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
-          <Route path="/wind" element={<AttributeDetail name="Wind" />} />
-          <Route path="/aqi" element={<AttributeDetail name="AQI" />} />
-          <Route path="/visibility" element={<AttributeDetail name="Visibility" />} />
-          <Route path="/surface-pressure" element={<AttributeDetail name="Surface Pressure" />} />
-          <Route path="/sealevel-pressure" element={<AttributeDetail name="Sealevel Pressure" />} />
+          <Route path="/temperature" element={<WeatherDetail name="Temperature" />} />
+          <Route path="/precipitation" element={<WeatherDetail name="Precipitation" />} />
+          <Route path="/wind" element={<WeatherDetail name="Wind" />} />
+          <Route path="/aqi" element={<WeatherDetail name="AQI" />} />
+          <Route path="/visibility" element={<WeatherDetail name="Visibility" />} />
+          <Route path="/surface-pressure" element={<WeatherDetail name="Surface Pressure" />} />
+          <Route path="/sealevel-pressure" element={<WeatherDetail name="Sealevel Pressure" />} />
         </Routes>
         
         {/* Map Section - Embedded interactive map */}
