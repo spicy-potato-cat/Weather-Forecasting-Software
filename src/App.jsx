@@ -4,8 +4,6 @@ import { Link } from 'react-router-dom'
 import LoginPage from './login.jsx'
 import Temperature from './temperature.jsx'
 import LiveMapPage from './liveMapPage.jsx'
-<Route path="/live-map" element={<LiveMapPage />} />
-
 import Logo from '/Logo.svg'
 import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
