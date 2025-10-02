@@ -316,7 +316,7 @@ function WeeklyForecast() {
 
       {forecastData && forecastData.some(d => d.isProjected) && (
         <div className="forecast-notice">
-          ℹ️ <strong>Note:</strong> Days 6-7 are projected based on current trends. {' '}
+          <strong>Note:</strong> Days 6-7 are projected based on current trends. {' '}
           <Link to="/api-limitations" className="forecast-notice-link">
             Learn more...
           </Link>
