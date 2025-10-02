@@ -80,6 +80,11 @@ function App() {
     return <LiveMapPage />;
   }
 
+  // If on /login, render only the login page
+  if (location.pathname === '/login') {
+    return <LoginPage />;
+  }
+
   // Otherwise, render the normal layout
   return (
     <>
@@ -87,7 +92,6 @@ function App() {
       <div className="glass">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/temperature" element={<Temperature />} />
           <Route path="/precipitation" element={<AttributeDetail name="Precipitation" />} />
           <Route path="/wind" element={<AttributeDetail name="Wind" />} />
