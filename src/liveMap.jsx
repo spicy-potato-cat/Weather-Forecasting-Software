@@ -7,34 +7,46 @@ import OSM from 'ol/source/OSM.js';
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js';
 import { fromLonLat, toLonLat } from 'ol/proj.js';
 
-import { clamp, lerp, kmhToMs, dirFromDegSpeedMsToUV } from './lib/math.js';
+import { clamp, lerp, meteoToUV } from './lib/math.js';
 
 // Config: conservative defaults
 const CONFIG = {
   // Particles
-  DENSITY_PER_PIXEL: 0.0016,
-  COUNT_MIN: 1000,
-  COUNT_MAX: 6000,
-  DOT_RADIUS_PX: 0.85,
-  COLOR: '#666666',
-  SHADOW_COLOR: 'rgba(0,0,0,0.5)',
-  SHADOW_BLUR: 1.25,
+  DENSITY_PER_PIXEL: 0.0008,
+  COUNT_MIN: 800,
+  COUNT_MAX: 5000,
+  DOT_RADIUS_PX: 1.2,
+  
+  // Visuals
+  COLOR: 'rgba(255, 255, 255, 0.8)',
+  SHADOW_COLOR: 'rgba(0, 150, 255, 0.4)',
+  SHADOW_BLUR: 2,
+  
+  // Speed-based color (optional)
+  USE_SPEED_COLOR: true,
+  SPEED_COLOR_MIN: [100, 150, 255], // Blue (slow) RGB
+  SPEED_COLOR_MAX: [255, 100, 100], // Red (fast) RGB
+  SPEED_MIN_MS: 0,
+  SPEED_MAX_MS: 20,
 
   // Lifetime/respawn
-  LIFE_MIN_S: 1.0,
-  LIFE_MAX_S: 2.0,
+  LIFE_MIN_S: 1.5,
+  LIFE_MAX_S: 3.0,
   VIEW_RESPAWN_PADDING_DEG: 0.0,
 
   // Wind sampling grid (API-backed)
-  GRID_STEP_DEG: 2.0,
-  PRIME_MAX_CELLS: 25,
-  CACHE_TTL_MS: 10 * 60 * 1000, // 10 minutes
+  GRID_STEP_DEG: 1.5,
+  PRIME_MAX_CELLS: 40,
+  CACHE_TTL_MS: 30 * 60 * 1000, // 30 minutes
+  
+  // API
+  USE_ALTITUDE: '10m', // or '80m', '120m', '180m'
 
   // Animation
   MAX_DT_S: 0.05,
 
   // Trails
-  TRAIL_FADE_ALPHA_PER_FRAME: 0.08,
+  TRAIL_FADE_ALPHA: 0.12,
 };
 
 const LiveMap = () => {
@@ -48,91 +60,9 @@ const LiveMap = () => {
   const lastTimeRef = useRef(0);
   const dprRef = useRef(window.devicePixelRatio || 1);
 
-  // Cache and inflight trackers (may be accidentally mutated elsewhere)
-  const windCacheRef = useRef(new Map());
-  const inflightRef = useRef(new Set());
-
-  // Ultra-defensive cache/inflight helpers that NEVER call .has() on a bad type
-  const cacheHas = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.has === 'function') return c.has(key);
-    if (c && typeof c === 'object') return Object.prototype.hasOwnProperty.call(c, key);
-    // repair to Map if totally broken
-    windCacheRef.current = new Map();
-    return false;
-  };
-  const cacheGet = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.get === 'function') return c.get(key);
-    if (c && typeof c === 'object') return c[key];
-    return undefined;
-  };
-  const cacheSet = (key, val) => {
-    let c = windCacheRef.current;
-    if (c && typeof c.set === 'function') {
-      c.set(key, val);
-      return;
-    }
-    if (!c || typeof c !== 'object') {
-      c = {};
-      windCacheRef.current = c;
-    }
-    c[key] = val;
-  };
-  const cacheDelete = (key) => {
-    const c = windCacheRef.current;
-    if (c && typeof c.delete === 'function') return c.delete(key);
-    if (c && typeof c === 'object') {
-      // eslint-disable-next-line no-prototype-builtins
-      if (c.hasOwnProperty(key)) {
-        delete c[key];
-        return true;
-      }
-    }
-    return false;
-  };
-  const inflightHas = (key) => {
-    const s = inflightRef.current;
-    if (s && typeof s.has === 'function') return s.has(key);
-    if (Array.isArray(s)) return s.includes(key);
-    if (s && typeof s === 'object') return !!s[key];
-    inflightRef.current = new Set();
-    return false;
-  };
-  const inflightAdd = (key) => {
-    let s = inflightRef.current;
-    if (s && typeof s.add === 'function') {
-      s.add(key);
-      return;
-    }
-    if (Array.isArray(s)) {
-      if (!s.includes(key)) s.push(key);
-      return;
-    }
-    if (!s || typeof s !== 'object') {
-      s = new Set();
-      inflightRef.current = s;
-      s.add(key);
-      return;
-    }
-    s[key] = true;
-  };
-  const inflightDelete = (key) => {
-    const s = inflightRef.current;
-    if (s && typeof s.delete === 'function') return s.delete(key);
-    if (Array.isArray(s)) {
-      const idx = s.indexOf(key);
-      if (idx >= 0) s.splice(idx, 1);
-      return true;
-    }
-    if (s && typeof s === 'object') {
-      if (s[key]) {
-        delete s[key];
-        return true;
-      }
-    }
-    return false;
-  };
+  // Simple, clean refs - no defensive wrappers
+  const windCacheRef = useRef(new Map()); // key: "i:j" -> { ts, u, v, speed }
+  const inflightRef = useRef(new Set()); // keys currently being fetched
 
   // Track last zoom to expire particles on zoom end
   const lastZoomRef = useRef(null);
@@ -188,13 +118,13 @@ const LiveMap = () => {
     const target = computeTargetCount();
     if (particles.length === 0) {
       for (let i = 0; i < target; i++) {
-        particles.push({ lon: 0, lat: 0, age: 0, life: 0 });
+        particles.push({ lon: 0, lat: 0, age: 0, life: 0, speed: 0 });
         respawnParticle(particles[i]);
       }
     } else if (particles.length < target) {
       const toAdd = target - particles.length;
       for (let i = 0; i < toAdd; i++) {
-        const p = { lon: 0, lat: 0, age: 0, life: 0 };
+        const p = { lon: 0, lat: 0, age: 0, life: 0, speed: 0 };
         respawnParticle(p);
         particles.push(p);
       }
@@ -203,41 +133,67 @@ const LiveMap = () => {
     }
   };
 
-  // Open-Meteo current weather at cell center -> { u, v } m/s (east, north)
+  // Open-Meteo hourly forecast at cell center -> { u, v, speed } m/s (east, north, magnitude)
   const fetchWindForCell = async (i, j) => {
     const key = `${i}:${j}`;
-    if (cacheHas(key)) return cacheGet(key);
-    if (inflightHas(key)) return null;
-
-    inflightAdd(key);
-    try {
-      const step = CONFIG.GRID_STEP_DEG;
-      const lonC = (i + 0.5) * step;
-      const latC = (j + 0.5) * step;
-      // Clamp lat/lon
-      const lat = Math.max(-85, Math.min(85, latC));
-      const lon = Math.max(-180, Math.min(180, lonC));
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
-      const res = await fetch(url);
-      const data = await res.json();
-      const cw = data && data.current_weather;
-      if (cw && typeof cw.windspeed === 'number' && typeof cw.winddirection === 'number') {
-        const speedMs = kmhToMs(cw.windspeed);
-        const { u, v } = dirFromDegSpeedMsToUV(cw.winddirection, speedMs);
-        const entry = { ts: Date.now(), u, v };
-        cacheSet(key, entry);
-        return entry;
-      } else {
-        const entry = { ts: Date.now(), u: 0, v: 0 };
-        cacheSet(key, entry);
+    const cache = windCacheRef.current;
+    
+    if (cache.has(key)) {
+      const entry = cache.get(key);
+      if (Date.now() - entry.ts < CONFIG.CACHE_TTL_MS) {
         return entry;
       }
-    } catch {
-      const entry = { ts: Date.now(), u: 0, v: 0 };
-      cacheSet(key, entry);
+      cache.delete(key);
+    }
+    
+    if (inflightRef.current.has(key)) return null;
+    
+    inflightRef.current.add(key);
+    
+    try {
+      const step = CONFIG.GRID_STEP_DEG;
+      const lon = (i + 0.5) * step;
+      const lat = clamp((j + 0.5) * step, -85, 85);
+      
+      const alt = CONFIG.USE_ALTITUDE;
+      const url = `https://api.open-meteo.com/v1/forecast?` +
+        `latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+        `&hourly=wind_speed_${alt},wind_direction_${alt}` +
+        `&forecast_days=1`;
+      
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.hourly) {
+        // Get current hour index (or first available)
+        const now = new Date();
+        const currentHour = now.getUTCHours();
+        const idx = Math.min(currentHour, data.hourly.time.length - 1);
+        
+        const speedKmh = data.hourly[`wind_speed_${alt}`]?.[idx];
+        const directionDeg = data.hourly[`wind_direction_${alt}`]?.[idx];
+        
+        if (typeof speedKmh === 'number' && typeof directionDeg === 'number') {
+          const speedMs = speedKmh / 3.6;
+          const { u, v } = meteoToUV(speedMs, directionDeg);
+          
+          const entry = { ts: Date.now(), u, v, speed: speedMs };
+          cache.set(key, entry);
+          return entry;
+        }
+      }
+      
+      const entry = { ts: Date.now(), u: 0, v: 0, speed: 0 };
+      cache.set(key, entry);
+      return entry;
+      
+    } catch (err) {
+      console.warn(`Wind fetch failed for ${key}:`, err);
+      const entry = { ts: Date.now(), u: 0, v: 0, speed: 0 };
+      cache.set(key, entry);
       return entry;
     } finally {
-      inflightDelete(key);
+      inflightRef.current.delete(key);
     }
   };
 
@@ -250,7 +206,7 @@ const LiveMap = () => {
 
   // Bilinear sample from four surrounding cells; triggers fetch as needed
   const sampleWindUV = async (lon, lat) => {
-    const { i, j, step } = getCellKey(lon, lat);
+    const { step } = getCellKey(lon, lat);
     const gx = lon / step;
     const gy = lat / step;
     const i0 = Math.floor(gx), i1 = i0 + 1;
@@ -263,13 +219,14 @@ const LiveMap = () => {
       `${i0}:${j1}`, `${i1}:${j1}`
     ];
 
+    const cache = windCacheRef.current;
     const values = new Array(4);
     for (let k = 0; k < 4; k++) {
       const key = keys[k];
-      let val = cacheGet(key);
+      let val = cache.get(key);
       // Expire stale
       if (val && Date.now() - val.ts > CONFIG.CACHE_TTL_MS) {
-        cacheDelete(key);
+        cache.delete(key);
         val = undefined;
       }
       if (!val) {
@@ -284,19 +241,26 @@ const LiveMap = () => {
     if (values.every(Boolean)) {
       const u00 = values[0].u, u10 = values[1].u, u01 = values[2].u, u11 = values[3].u;
       const v00 = values[0].v, v10 = values[1].v, v01 = values[2].v, v11 = values[3].v;
+      const s00 = values[0].speed, s10 = values[1].speed, s01 = values[2].speed, s11 = values[3].speed;
       const u0 = u00 + (u10 - u00) * tx;
       const u1 = u01 + (u11 - u01) * tx;
       const v0 = v00 + (v10 - v00) * tx;
       const v1 = v01 + (v11 - v01) * tx;
-      return { u: u0 + (u1 - u0) * ty, v: v0 + (v1 - v0) * ty };
+      const s0 = s00 + (s10 - s00) * tx;
+      const s1 = s01 + (s11 - s01) * tx;
+      return { 
+        u: u0 + (u1 - u0) * ty, 
+        v: v0 + (v1 - v0) * ty,
+        speed: s0 + (s1 - s0) * ty
+      };
     }
 
     // Otherwise return nearest available cell if any
     const nearest = values.find(Boolean);
-    if (nearest) return { u: nearest.u, v: nearest.v };
+    if (nearest) return { u: nearest.u, v: nearest.v, speed: nearest.speed };
 
     // No data yet
-    return { u: 0, v: 0 };
+    return { u: 0, v: 0, speed: 0 };
   };
 
   // Prefetch a capped set of cells over the view (up to PRIME_MAX_CELLS)
@@ -317,12 +281,14 @@ const LiveMap = () => {
     const iStep = Math.max(1, Math.floor(iCount / targetPerDim));
     const jStep = Math.max(1, Math.floor(jCount / targetPerDim));
 
+    const cache = windCacheRef.current;
+    const inflight = inflightRef.current;
     let fetched = 0;
     for (let jj = jMin; jj <= jMax; jj += jStep) {
       for (let ii = iMin; ii <= iMax; ii += iStep) {
         if (fetched >= CONFIG.PRIME_MAX_CELLS) break;
         const key = `${ii}:${jj}`;
-        if (!cacheHas(key) && !inflightHas(key)) {
+        if (!cache.has(key) && !inflight.has(key)) {
           fetchWindForCell(ii, jj);
           fetched++;
         }
@@ -343,10 +309,10 @@ const LiveMap = () => {
     const dt = Math.min((ts - lastTimeRef.current) / 1000, CONFIG.MAX_DT_S);
     lastTimeRef.current = ts;
 
-    // Fade for short trails
+    // Fade for smooth trails using exponential decay
     const canvas = canvasRef.current;
     ctx.globalCompositeOperation = 'destination-out';
-    const alpha = 1 - Math.exp(-CONFIG.TRAIL_FADE_ALPHA_PER_FRAME * (dt / (1 / 60)));
+    const alpha = 1 - Math.exp(-CONFIG.TRAIL_FADE_ALPHA * (dt / (1 / 60)));
     ctx.fillStyle = `rgba(0,0,0,${alpha.toFixed(4)})`;
     ctx.fillRect(0, 0, canvas.width / dprRef.current, canvas.height / dprRef.current);
     ctx.globalCompositeOperation = 'source-over';
@@ -367,38 +333,68 @@ const LiveMap = () => {
         respawnParticle(p);
       }
 
-      // Sample wind (u east, v north) in m/s
-      const { u, v } = await sampleWindUV(p.lon, p.lat);
+      // Sample wind at particle location
+      const wind = await sampleWindUV(p.lon, p.lat);
+      if (!wind) continue;
 
-      // Advance in world meters (EPSG:3857)
-      const coord3857 = fromLonLat([p.lon, p.lat]);
-      const mx = coord3857[0] + u * dt;
-      const my = coord3857[1] + v * dt;
-      const newLonLat = toLonLat([mx, my]);
+      const { u, v, speed } = wind;
 
-      // If new pos is invalid or outside visible view (with tiny tolerance), respawn
-      const { lonMin, lonMax, latMin, latMax } = getViewLonLatBounds();
-      const out =
-        !isFinite(newLonLat[0]) || !isFinite(newLonLat[1]) ||
-        newLonLat[0] < lonMin - 0.5 || newLonLat[0] > lonMax + 0.5 ||
-        newLonLat[1] < latMin - 0.5 || newLonLat[1] > latMax + 0.5;
+      // Advect in Web Mercator (EPSG:3857) world coordinates
+      const [x3857, y3857] = fromLonLat([p.lon, p.lat]);
+      const newX = x3857 + u * dt; // meters
+      const newY = y3857 + v * dt; // meters
+      const [newLon, newLat] = toLonLat([newX, newY]);
 
-      if (out) {
+      // Validate new position
+      if (!isFinite(newLon) || !isFinite(newLat)) {
         respawnParticle(p);
         continue;
       }
 
-      p.lon = newLonLat[0];
-      p.lat = newLonLat[1];
+      // Check if out of viewport
+      const { lonMin, lonMax, latMin, latMax } = getViewLonLatBounds();
+      if (newLon < lonMin || newLon > lonMax || newLat < latMin || newLat > latMax) {
+        respawnParticle(p);
+        continue;
+      }
 
-      const px = map.getPixelFromCoordinate([mx, my]);
+      p.lon = newLon;
+      p.lat = newLat;
+
+      // Store speed for coloring
+      p.speed = speed;
+
+      const px = map.getPixelFromCoordinate(fromLonLat([p.lon, p.lat]));
       if (!px) continue;
       ctx.moveTo(px[0], px[1]);
       ctx.arc(px[0], px[1], CONFIG.DOT_RADIUS_PX, 0, Math.PI * 2);
     }
 
-    ctx.fillStyle = CONFIG.COLOR;
-    ctx.fill();
+    if (CONFIG.USE_SPEED_COLOR) {
+      // Draw with speed-based colors
+      ctx.fill(); // Fill the path first to create the shape
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const px = map.getPixelFromCoordinate(fromLonLat([p.lon, p.lat]));
+        if (!px) continue;
+        
+        const t = clamp(
+          (p.speed - CONFIG.SPEED_MIN_MS) / (CONFIG.SPEED_MAX_MS - CONFIG.SPEED_MIN_MS),
+          0, 1
+        );
+        const r = Math.round(lerp(CONFIG.SPEED_COLOR_MIN[0], CONFIG.SPEED_COLOR_MAX[0], t));
+        const g = Math.round(lerp(CONFIG.SPEED_COLOR_MIN[1], CONFIG.SPEED_COLOR_MAX[1], t));
+        const b = Math.round(lerp(CONFIG.SPEED_COLOR_MIN[2], CONFIG.SPEED_COLOR_MAX[2], t));
+        
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        ctx.beginPath();
+        ctx.arc(px[0], px[1], CONFIG.DOT_RADIUS_PX, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = CONFIG.COLOR;
+      ctx.fill();
+    }
 
     // Reset shadow
     ctx.shadowBlur = 0;
