@@ -63,6 +63,7 @@ const LiveMap = () => {
   const lastApiFetchRef = useRef(0);
   const clickTimeoutRef = useRef(null);
   const hasMovedRef = useRef(false);
+  const lastZoomRef = useRef(null);
 
   // Simplified particle system for wind
   const respawnParticle = (p, bounds) => {
@@ -188,6 +189,32 @@ const LiveMap = () => {
     rafRef.current = requestAnimationFrame(animate);
   };
 
+  /**
+   * Detect if user zoomed out (scroll out)
+   * Returns true if zoom level decreased
+   */
+  const detectScrollOut = (currentZoom, previousZoom) => {
+    if (previousZoom === null || previousZoom === undefined) return false;
+    const zoomDiff = currentZoom - previousZoom;
+    return zoomDiff < -0.01; // Threshold to avoid floating point errors
+  };
+
+  /**
+   * Reset all particles immediately by expiring them
+   * Forces them to respawn in new viewport bounds
+   */
+  const resetParticles = () => {
+    const particles = particlesRef.current;
+    if (!particles || particles.length === 0) return;
+    
+    const bounds = getViewLonLatBounds();
+    
+    // Immediately respawn all particles in new viewport
+    particles.forEach((p) => {
+      respawnParticle(p, bounds);
+    });
+  };
+
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -245,6 +272,53 @@ const LiveMap = () => {
       rafRef.current = requestAnimationFrame(animate);
     }
 
+    // Handle map movement and zoom
+    let moveEndTimeout;
+    const onMoveEnd = () => {
+      clearTimeout(moveEndTimeout);
+      
+      const currentZoom = map.getView().getZoom();
+      const previousZoom = lastZoomRef.current;
+      
+      // Detect scroll out immediately
+      const scrolledOut = detectScrollOut(currentZoom, previousZoom);
+      
+      if (scrolledOut) {
+        console.log(`Embedded map: Zoom out detected ${previousZoom?.toFixed(2)} → ${currentZoom.toFixed(2)}`);
+        resetParticles(); // Reset particles immediately on zoom out
+        lastZoomRef.current = currentZoom;
+      } else if (previousZoom !== null && Math.abs(currentZoom - previousZoom) > 0.01) {
+        lastZoomRef.current = currentZoom;
+      }
+      
+      // Debounced wind data fetch
+      moveEndTimeout = setTimeout(() => {
+        fetchWindData();
+      }, 1000);
+    };
+    
+    map.on('moveend', onMoveEnd);
+
+    // Real-time zoom detection
+    const onResolutionChange = () => {
+      const currentZoom = map.getView().getZoom();
+      const previousZoom = lastZoomRef.current;
+      
+      if (previousZoom !== null && previousZoom !== undefined) {
+        const scrolledOut = detectScrollOut(currentZoom, previousZoom);
+        
+        if (scrolledOut) {
+          console.log(`Embedded map: Instant zoom out ${previousZoom.toFixed(2)} → ${currentZoom.toFixed(2)}`);
+          resetParticles();
+          lastZoomRef.current = currentZoom;
+        } else if (Math.abs(currentZoom - previousZoom) > 0.01) {
+          lastZoomRef.current = currentZoom;
+        }
+      }
+    };
+
+    map.getView().on('change:resolution', onResolutionChange);
+
     // Handle click to navigate (only if no drag occurred)
     const handleClick = () => {
       if (hasMovedRef.current) {
@@ -275,13 +349,26 @@ const LiveMap = () => {
     viewport.addEventListener('pointerdown', handlePointerDown);
     viewport.addEventListener('pointermove', handlePointerMove);
 
+    // Initialize lastZoomRef with the initial zoom level
+    lastZoomRef.current = map.getView().getZoom();
+
     return () => {
       if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+      if (moveEndTimeout) clearTimeout(moveEndTimeout);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', resizeCanvas);
       viewport.removeEventListener('click', handleClick);
       viewport.removeEventListener('pointerdown', handlePointerDown);
       viewport.removeEventListener('pointermove', handlePointerMove);
+      
+      // Properly remove resolution change listener
+      const view = map.getView();
+      if (view) {
+        view.un('change:resolution', onResolutionChange);
+      }
+      
+      map.un('moveend', onMoveEnd);
+      
       if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
       map.setTarget(null);
     };
