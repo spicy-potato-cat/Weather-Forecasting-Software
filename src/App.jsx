@@ -13,6 +13,7 @@ import ProfilePage from './profile.jsx'
 import WeatherDetail from './weatherDetail.jsx'
 import WeeklyForecast from './components/WeeklyForecast/WeeklyForecast.jsx'
 import ApiLimitations from './pages/ApiLimitations.jsx'
+import SearchResults from './pages/SearchResults.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -256,6 +257,10 @@ function App() {
 
   if (location.pathname === '/api-limitations') {
     return <ApiLimitations />;
+  }
+
+  if (location.pathname === '/search') {
+    return <SearchResults />;
   }
 
   // Otherwise, render the normal layout

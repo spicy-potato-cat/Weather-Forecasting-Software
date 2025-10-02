@@ -8,7 +8,7 @@ import "./NavBar.css";
 /**
  * Navigation Bar
  */
-export default function NavBar({ title = "Aether", onSearch }) {
+export default function NavBar({ title = "Aether" }) {
     const [query, setQuery] = useState("");
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -47,7 +47,13 @@ export default function NavBar({ title = "Aether", onSearch }) {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        if (onSearch) onSearch(query.trim());
+        const searchQuery = query.trim();
+        
+        if (searchQuery) {
+            // Navigate to search results page with query
+            navigate(`/search?q=${encodeURIComponent(searchQuery)}`);
+            setQuery(''); // Clear search after submitting
+        }
     };
 
     const toggleMenu = () => {
@@ -164,5 +170,4 @@ export default function NavBar({ title = "Aether", onSearch }) {
 
 NavBar.propTypes = {
     title: PropTypes.string,
-    onSearch: PropTypes.func,
 };
