@@ -1,40 +1,43 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import 'ol/ol.css';
-import OLMap from 'ol/Map.js'; // Rename to avoid collision with JavaScript Map
+import OLMap from 'ol/Map.js';
 import View from 'ol/View.js';
 import TileLayer from 'ol/layer/Tile.js';
 import OSM from 'ol/source/OSM.js';
 import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js';
 import { fromLonLat, toLonLat } from 'ol/proj.js';
-
+import NavBar from './components/navbar/navbar.jsx';
 import { clamp, lerp, kmhToMs, meteoToUV } from './lib/math.js';
 
 // CONFIG: Optimized for OpenWeather API
 const CONFIG = {
   // Particles
-  DENSITY_PER_PIXEL: 0.0005,
-  COUNT_MIN: 500,
+  DENSITY_PER_PIXEL: 0.0008, // Increased for better visibility
+  COUNT_MIN: 800,
   COUNT_MAX: 2000,
-  DOT_RADIUS_PX: 1.5,
+  DOT_RADIUS_PX: 1.5, 
   COLOR: '#ffffff',
-  SHADOW_COLOR: 'rgba(0,0,0,0.4)',
-  SHADOW_BLUR: 1,
+  SHADOW_COLOR: 'rgba(0,0,0,0.6)',
+  SHADOW_BLUR: 2,
 
   // Lifetime/respawn
   LIFE_MIN_S: 4.0,
-  LIFE_MAX_S: 8.0,
+  LIFE_MAX_S: 7.0,
   VIEW_RESPAWN_PADDING_DEG: 1.0,
 
   // OpenWeather API settings
   OPENWEATHER_API_KEY: import.meta.env.VITE_OPENWEATHER_API_KEY || 'demo',
-  CACHE_TTL_MS: 10 * 60 * 1000, // 10 minutes (data doesn't change that fast)
+  CACHE_TTL_MS: 10 * 60 * 1000,
   
   // Animation
   MAX_DT_S: 0.05,
-  TRAIL_FADE_ALPHA: 0.95,
+  TRAIL_FADE_ALPHA: 0.92, // Faster fade for cleaner trails
   
-  // API Rate limiting - STRICT for free tier (60/min = 1/sec)
-  MIN_FETCH_INTERVAL_MS: 1500, // 1.5 seconds between ANY fetch (safety margin)
+  // Wind amplification (for visual effect)
+  WIND_SPEED_MULTIPLIER: 5000, // CRITICAL: Amplify wind for visible movement
+  
+  // API Rate limiting
+  MIN_FETCH_INTERVAL_MS: 1500,
   MAX_RETRIES: 2,
   RETRY_DELAY_MS: 3000,
 };
@@ -56,6 +59,14 @@ const ensureJSSet = (ref) => {
 };
 
 const LiveMap = () => {
+  // State for layer toggles
+  const [layers, setLayers] = useState({
+    wind: false,
+    temperature: false,
+    precipitation: false,
+    clouds: false,
+  });
+
   const mapRef = useRef(null);
   const canvasRef = useRef(null);
 
@@ -79,6 +90,9 @@ const LiveMap = () => {
   const lastApiFetchRef = useRef(0);
   const apiCallCountRef = useRef(0);
   const retryCountRef = useRef(0);
+
+  // ADDED: Track if wind rendering is active
+  const isWindActiveRef = useRef(false);
 
   // Ensure refs are initialized before any code runs
   ensureJSMap(windCacheRef);
@@ -166,6 +180,36 @@ const LiveMap = () => {
     } else if (particles.length > target) {
       particles.splice(target);
     }
+  };
+
+  /**
+   * Detect if user zoomed out (scroll out)
+   * Returns true if zoom level decreased
+   */
+  const detectScrollOut = (currentZoom, previousZoom) => {
+    if (previousZoom === null || previousZoom === undefined) return false;
+    const zoomDiff = currentZoom - previousZoom;
+    console.log(`🔍 Zoom detection: prev=${previousZoom.toFixed(2)}, curr=${currentZoom.toFixed(2)}, diff=${zoomDiff.toFixed(2)}`);
+    return zoomDiff < -0.01; // Threshold to avoid floating point errors
+  };
+
+  /**
+   * Reset all particles immediately by expiring them
+   * Forces them to respawn in new viewport bounds
+   */
+  const resetParticles = () => {
+    const particles = particlesRef.current;
+    if (!particles || particles.length === 0) return;
+    
+    console.log(`🔄 Resetting ${particles.length} particles`);
+    
+    // Immediately expire all particles
+    particles.forEach((p) => {
+      p.age = p.life; // Force expiration
+    });
+    
+    // Adjust particle count for new zoom level
+    initOrResizeParticles();
   };
 
   // OPTIMIZED: Fetch wind data from OpenWeather with strict rate limiting
@@ -265,12 +309,12 @@ const LiveMap = () => {
         return windGridDataRef.current;
       }
     } catch (err) {
-      console.error('❌ Wind fetch failed:', err.message);
+      console.error('Wind fetch failed:', err.message);
       return windGridDataRef.current; // Return cached data on error
     }
   };
 
-  // SIMPLIFIED: Sample wind from cached grid
+  // FIXED: Sample wind with proper scaling
   const sampleWindUV = (lon, lat) => {
     const grid = windGridDataRef.current;
     
@@ -283,24 +327,82 @@ const LiveMap = () => {
       return { u: 0, v: 0 };
     }
     
-    // Check if position is within cached bounds (with large tolerance for single-point data)
-    const tolerance = 50; // degrees (very generous for single-point weather)
+    // Check if position is within cached bounds
+    const tolerance = 50;
     if (lon < grid.lonMin - tolerance || lon > grid.lonMax + tolerance ||
         lat < grid.latMin - tolerance || lat > grid.latMax + tolerance) {
       return { u: 0, v: 0 };
     }
     
-    // Return uniform wind (single measurement point covers viewport)
-    return { u: grid.u, v: grid.v };
+    // CRITICAL FIX: Amplify wind velocity for visible movement
+    // The u/v values are in m/s, but we need much larger values for visible pixel movement
+    return { 
+      u: grid.u * CONFIG.WIND_SPEED_MULTIPLIER, 
+      v: grid.v * CONFIG.WIND_SPEED_MULTIPLIER 
+    };
   };
 
-  // OPTIMIZED: Animation loop
+  /**
+   * Start wind particle rendering
+   */
+  const startWindRendering = () => {
+    if (isWindActiveRef.current) {
+      console.log('Wind rendering already active');
+      return;
+    }
+    
+    console.log('Starting wind rendering');
+    isWindActiveRef.current = true;
+    
+    // Reinitialize particles
+    initOrResizeParticles();
+    
+    // Fetch wind data if not cached or stale
+    fetchWindDataOpenWeather();
+    
+    // Resume animation if not running
+    if (!rafRef.current) {
+      lastTimeRef.current = 0;
+      rafRef.current = requestAnimationFrame(animate);
+    }
+  };
+
+  /**
+   * Stop wind particle rendering
+   */
+  const stopWindRendering = () => {
+    if (!isWindActiveRef.current) {
+      console.log('Wind rendering already stopped');
+      return;
+    }
+    
+    console.log('Stopping wind rendering');
+    isWindActiveRef.current = false;
+    
+    // Clear all particles
+    particlesRef.current = [];
+    
+    // Clear canvas
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (canvas && ctx) {
+      ctx.clearRect(0, 0, canvas.width / dprRef.current, canvas.height / dprRef.current);
+    }
+  };
+
+  // MODIFIED: Animation loop that checks if wind is active
   const animate = (ts) => {
     const map = mapObjRef.current;
     const ctx = ctxRef.current;
     const canvas = canvasRef.current;
 
     if (!map || !ctx || !canvas) {
+      rafRef.current = requestAnimationFrame(animate);
+      return;
+    }
+
+    // Only render wind particles if wind layer is active
+    if (!isWindActiveRef.current) {
       rafRef.current = requestAnimationFrame(animate);
       return;
     }
@@ -323,6 +425,8 @@ const LiveMap = () => {
     ctx.shadowBlur = CONFIG.SHADOW_BLUR;
     ctx.fillStyle = CONFIG.COLOR;
 
+    let movedCount = 0;
+
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
 
@@ -332,19 +436,19 @@ const LiveMap = () => {
         continue;
       }
 
-      // Sample wind - this now actually returns proper u/v values
       const { u, v } = sampleWindUV(p.lon, p.lat);
       
-      // Advect particle in world space
       const coord3857 = fromLonLat([p.lon, p.lat]);
-      const mx = coord3857[0] + u * dt;
-      const my = coord3857[1] + v * dt;
-      const newLonLat = toLonLat([mx, my]);
+      const newX = coord3857[0] + u * dt;
+      const newY = coord3857[1] + v * dt;
+      const newLonLat = toLonLat([newX, newY]);
 
-      // Bounds check
+      if (!isFinite(newLonLat[0]) || !isFinite(newLonLat[1])) {
+        respawnParticle(p);
+        continue;
+      }
+
       const outOfBounds =
-        !isFinite(newLonLat[0]) ||
-        !isFinite(newLonLat[1]) ||
         newLonLat[0] < bounds.lonMin ||
         newLonLat[0] > bounds.lonMax ||
         newLonLat[1] < bounds.latMin ||
@@ -358,14 +462,21 @@ const LiveMap = () => {
       p.lon = newLonLat[0];
       p.lat = newLonLat[1];
 
-      // Convert to screen pixels
-      const px = map.getPixelFromCoordinate([mx, my]);
+      const px = map.getPixelFromCoordinate([newX, newY]);
       if (!px) continue;
 
-      // Draw particle
       ctx.beginPath();
       ctx.arc(px[0], px[1], CONFIG.DOT_RADIUS_PX, 0, Math.PI * 2);
       ctx.fill();
+
+      movedCount++;
+    }
+
+    if (Math.floor(ts / 5000) !== Math.floor((ts - 16) / 5000)) {
+      const grid = windGridDataRef.current;
+      if (grid) {
+        console.log(`Particles: ${particles.length} | Moved: ${movedCount} | Wind: ${grid.speed.toFixed(1)}m/s @ ${grid.direction} deg`);
+      }
     }
 
     ctx.shadowBlur = 0;
@@ -385,6 +496,10 @@ const LiveMap = () => {
     });
     mapObjRef.current = map;
 
+    // Initialize lastZoomRef with the initial zoom level
+    lastZoomRef.current = map.getView().getZoom();
+    console.log(`🗺️ Initial zoom level: ${lastZoomRef.current.toFixed(2)}`);
+
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
     canvas.style.left = '0';
@@ -403,7 +518,7 @@ const LiveMap = () => {
     const onResize = () => {
       resizeCanvas();
       initOrResizeParticles();
-      fetchWindDataOpenWeather(); // Use OpenWeather
+      fetchWindDataOpenWeather();
     };
     
     resizeCanvas();
@@ -411,49 +526,287 @@ const LiveMap = () => {
 
     initOrResizeParticles();
     
-    // Initial fetch with proper API key check
+    // Initial fetch with API key check
     if (!CONFIG.OPENWEATHER_API_KEY || CONFIG.OPENWEATHER_API_KEY === 'demo') {
-      console.error('⚠️ OPENWEATHER_API_KEY not set! Add it to .env.local');
+      console.error('OPENWEATHER_API_KEY not set! Add it to .env.local');
       console.log('Get your free API key at: https://openweathermap.org/api');
+      windGridDataRef.current = {
+        centerLon: 0,
+        centerLat: 0,
+        lonMin: -180,
+        lonMax: 180,
+        latMin: -85,
+        latMax: 85,
+        u: 0.5,
+        v: 0.5,
+        speed: 5,
+        direction: 45,
+        ts: Date.now(),
+      };
+      console.log('Using demo wind data for testing');
     } else {
       fetchWindDataOpenWeather();
     }
 
-    // Aggressive debounce for moveend (2 seconds)
+    // Enhanced moveend handler with immediate zoom detection
     let moveEndTimeout;
     const onMoveEnd = () => {
       clearTimeout(moveEndTimeout);
+      
+      const currentZoom = map.getView().getZoom();
+      const previousZoom = lastZoomRef.current;
+      
+      const scrolledOut = detectScrollOut(currentZoom, previousZoom);
+      
+      if (scrolledOut) {
+        console.log(`ZOOM OUT: ${previousZoom?.toFixed(2)} → ${currentZoom.toFixed(2)}`);
+        resetParticles();
+        lastZoomRef.current = currentZoom;
+      } else if (previousZoom !== null && Math.abs(currentZoom - previousZoom) > 0.01) {
+        console.log(`ZOOM IN: ${previousZoom?.toFixed(2)} → ${currentZoom.toFixed(2)}`);
+        lastZoomRef.current = currentZoom;
+      }
+      
       moveEndTimeout = setTimeout(() => {
-        const z = map.getView().getZoom();
-        if (lastZoomRef.current !== null && z !== lastZoomRef.current) {
+        if (!scrolledOut && previousZoom !== null && currentZoom !== previousZoom) {
           const ps = particlesRef.current;
-          ps.forEach((p) => (p.age = p.life));
+          ps.forEach((p) => (p.age = p.life * 0.8));
         }
-        lastZoomRef.current = z;
+        
         fetchWindDataOpenWeather();
-      }, 2000); // Wait 2 seconds after movement stops
+      }, 2000);
     };
+    
     map.on('moveend', onMoveEnd);
+
+    // FIXED: Store the resolution change listener so we can properly remove it
+    const onResolutionChange = () => {
+      const currentZoom = map.getView().getZoom();
+      const previousZoom = lastZoomRef.current;
+      
+      if (previousZoom !== null && previousZoom !== undefined) {
+        const scrolledOut = detectScrollOut(currentZoom, previousZoom);
+        
+        if (scrolledOut) {
+          console.log(`⚡ INSTANT ZOOM OUT: ${previousZoom.toFixed(2)} → ${currentZoom.toFixed(2)}`);
+          resetParticles();
+          lastZoomRef.current = currentZoom;
+        } else if (Math.abs(currentZoom - previousZoom) > 0.01) {
+          lastZoomRef.current = currentZoom;
+        }
+      }
+    };
+
+    // Add the listener
+    map.getView().on('change:resolution', onResolutionChange);
 
     rafRef.current = requestAnimationFrame(animate);
 
-    // Log API usage stats on cleanup
+    // FIXED: Proper cleanup
     return () => {
       console.log(`📊 Total API calls this session: ${apiCallCountRef.current}`);
-      clearTimeout(moveEndTimeout);
-      cancelAnimationFrame(rafRef.current);
+      
+      // Clear timeout
+      if (moveEndTimeout) clearTimeout(moveEndTimeout);
+      
+      // Cancel animation
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      
+      // Remove event listeners properly
       window.removeEventListener('resize', onResize);
-      map.un('moveend', onMoveEnd);
-      if (canvas.parentElement) canvas.parentElement.removeChild(canvas);
-      map.setTarget(null);
+      
+      if (map) {
+        map.un('moveend', onMoveEnd);
+        
+        // Only remove the resolution listener if the view still exists
+        const view = map.getView();
+        if (view) {
+          view.un('change:resolution', onResolutionChange);
+        }
+      }
+      
+      // Clean up canvas
+      if (canvas && canvas.parentElement) {
+        canvas.parentElement.removeChild(canvas);
+      }
+      
+      // Dispose map
+      if (map) {
+        map.setTarget(null);
+      }
+      
       mapObjRef.current = null;
     };
   }, []);
 
+  // Toggle layer visibility
+  const handleLayerToggle = (layerName) => {
+    setLayers(prev => {
+      const newLayers = {
+        ...prev,
+        [layerName]: !prev[layerName]
+      };
+      
+      // Handle wind layer toggle
+      if (layerName === 'wind') {
+        if (newLayers.wind) {
+          startWindRendering();
+        } else {
+          stopWindRendering();
+        }
+      }
+      
+      return newLayers;
+    });
+  };
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-      <div id="map" ref={mapRef} style={{ width: '100%', height: '100%' }} />
-    </div>
+    <>
+      <NavBar title="Live Weather Map" />
+      
+      <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 80px)', overflow: 'hidden' }}>
+        <div id="map" ref={mapRef} style={{ width: '100%', height: '100%' }} />
+        
+        {/* Layer Control Overlay */}
+        <div style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          background: 'rgba(5, 57, 67, 0.95)',
+          backdropFilter: 'blur(10px)',
+          borderRadius: '12px',
+          padding: '20px',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
+          minWidth: '200px',
+          zIndex: 1000,
+        }}>
+          <h3 style={{
+            margin: '0 0 16px 0',
+            fontSize: '1.1rem',
+            fontWeight: '600',
+            color: '#61ffd0',
+            borderBottom: '2px solid #2fe79f',
+            paddingBottom: '8px',
+          }}>
+            Layers
+          </h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Wind Layer */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              color: '#f4fff9',
+              fontSize: '0.95rem',
+            }}>
+              <input
+                type="checkbox"
+                checked={layers.wind}
+                onChange={() => handleLayerToggle('wind')}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  cursor: 'pointer',
+                  accentColor: '#2fe79f',
+                }}
+              />
+              <span>Wind</span>
+            </label>
+
+            {/* Temperature Layer */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              color: '#f4fff9',
+              fontSize: '0.95rem',
+            }}>
+              <input
+                type="checkbox"
+                checked={layers.temperature}
+                onChange={() => handleLayerToggle('temperature')}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  cursor: 'pointer',
+                  accentColor: '#2fe79f',
+                }}
+              />
+              <span>Temperature</span>
+            </label>
+
+            {/* Precipitation Layer */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              color: '#f4fff9',
+              fontSize: '0.95rem',
+            }}>
+              <input
+                type="checkbox"
+                checked={layers.precipitation}
+                onChange={() => handleLayerToggle('precipitation')}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  cursor: 'pointer',
+                  accentColor: '#2fe79f',
+                }}
+              />
+              <span>Precipitation</span>
+            </label>
+
+            {/* Clouds Layer */}
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              userSelect: 'none',
+              color: '#f4fff9',
+              fontSize: '0.95rem',
+            }}>
+              <input
+                type="checkbox"
+                checked={layers.clouds}
+                onChange={() => handleLayerToggle('clouds')}
+                style={{
+                  width: '18px',
+                  height: '18px',
+                  cursor: 'pointer',
+                  accentColor: '#2fe79f',
+                }}
+              />
+              <span>Clouds</span>
+            </label>
+          </div>
+
+          {/* Active Layers Count */}
+          <div style={{
+            marginTop: '16px',
+            paddingTop: '12px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+            fontSize: '0.85rem',
+            color: '#c9f5e8',
+            textAlign: 'center',
+          }}>
+            {Object.values(layers).filter(Boolean).length} layer(s) active
+          </div>
+        </div>
+      </div>
+    </>
   );
 };
 
