@@ -1,12 +1,96 @@
-# React + Vite
+# Weather Forecasting Software - Backend API
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Backend server for the Weather Forecasting Software application.
 
-Currently, two official plugins are available:
+## Prerequisites
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js (v18 or higher)
+- PostgreSQL (v14 or higher)
+- npm or yarn
 
-## Expanding the ESLint configuration
+## Installation
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. Navigate to the backend directory:
+   ```bash
+   cd backend
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Create a `.env` file from the example:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. Update the `.env` file with your configuration:
+   - Database credentials
+   - JWT secret
+   - OpenWeather API key
+   - etc.
+
+## Database Setup
+
+Create a PostgreSQL database and update the connection details in `.env`:
+
+```sql
+CREATE DATABASE weather_forecast_db;
+```
+
+## Running the Server
+
+### Development mode (with auto-reload):
+```bash
+npm run dev
+```
+
+### Production mode:
+```bash
+npm start
+```
+
+The server will start on `http://localhost:5000` (or the port specified in `.env`).
+
+## API Endpoints
+
+### Health Check
+- `GET /api/health` - Server health status
+
+### Authentication
+- `POST /api/auth/register` - User registration
+- `POST /api/auth/login` - User login
+- `POST /api/auth/logout` - User logout
+
+### User
+- `GET /api/user/profile` - Get user profile (protected)
+- `PUT /api/user/profile` - Update user profile (protected)
+
+### Weather
+- `GET /api/weather/current?lat=<lat>&lon=<lon>` - Get current weather
+- `GET /api/weather/forecast?lat=<lat>&lon=<lon>` - Get weather forecast
+
+## Project Structure
+
+```
+backend/
+├── config/
+│   └── database.js       # Database configuration
+├── middleware/
+│   ├── auth.js          # Authentication middleware
+│   └── errorHandler.js  # Global error handler
+├── routes/
+│   ├── auth.js          # Authentication routes
+│   ├── user.js          # User routes
+│   └── weather.js       # Weather routes
+├── .env.example         # Environment variables template
+├── .gitignore          # Git ignore file
+├── package.json        # Dependencies and scripts
+├── README.md          # This file
+└── server.js          # Main server file
+```
+
+## Environment Variables
+
+See `.env.example` for all required environment variables.

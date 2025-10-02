@@ -31,19 +31,31 @@ function LoginPage() {
         if (!validate()) return;
         setStatus({ loading: true, message: "" });
         try {
-            const res = await fetch("/api/login", {
+            // Connect to backend API
+            const res = await fetch("http://localhost:5000/api/auth/login", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(form),
             });
-            if (!res.ok) throw new Error("Invalid credentials");
             
-            // Store auth token (in a real app, get this from response)
-            const mockToken = 'mock_auth_token_' + Date.now();
-            localStorage.setItem('authToken', mockToken);
-            localStorage.setItem('user', JSON.stringify({ email: form.email }));
+            const data = await res.json();
+            
+            if (!res.ok) {
+                throw new Error(data.message || "Invalid credentials");
+            }
+            
+            // Store auth token from backend response
+            if (data.token) {
+                localStorage.setItem('authToken', data.token);
+            }
+            if (data.user) {
+                localStorage.setItem('user', JSON.stringify(data.user));
+            }
             
             setStatus({ loading: false, message: "Logged in successfully." });
+            
+            // Trigger storage event for navbar
+            window.dispatchEvent(new Event('storage'));
             
             // Redirect to home after 1 second
             setTimeout(() => {
