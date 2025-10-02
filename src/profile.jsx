@@ -2,6 +2,53 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBar from './components/navbar/navbar.jsx';
 import './profile.css';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+// Sortable Location Item Component
+function SortableLocationItem({ location, onRemove }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: location.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="location-card sortable-location"
+    >
+      <div className="location-drag-handle" {...attributes} {...listeners}>
+        ⋮⋮
+      </div>
+      <div className="location-info">
+        <span className="location-name">{location.location_name}</span>
+        <span className="location-coords">
+          {typeof location.latitude === 'number' ? location.latitude.toFixed(4) : location.latitude}°, {typeof location.longitude === 'number' ? location.longitude.toFixed(4) : location.longitude}°
+        </span>
+        <span className="location-rank">Rank: #{location.rank + 1}</span>
+      </div>
+      <button
+        className="location-remove-btn"
+        onClick={() => onRemove(location.id)}
+        aria-label="Remove location"
+      >
+        Remove
+      </button>
+    </div>
+  );
+}
 
 function ProfilePage() {
     const navigate = useNavigate();
@@ -20,6 +67,14 @@ function ProfilePage() {
     const [locationInput, setLocationInput] = useState('');
     const [status, setStatus] = useState({ loading: false, message: '', type: '' });
     const [activeTab, setActiveTab] = useState('profile');
+
+    // Drag and drop sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
 
     useEffect(() => {
         // Check authentication
@@ -111,19 +166,48 @@ function ProfilePage() {
         setStatus({ loading: true, message: 'Adding location...', type: 'info' });
 
         try {
-            // Geocode the location using OpenWeather API
-            const geocodeUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(locationInput)}&limit=1&appid=${import.meta.env.VITE_OPENWEATHER_API_KEY}`;
+            // Step 1: Geocode the location using OpenWeather Geocoding API
+            const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+            const geocodeUrl = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(locationInput)}&limit=5&appid=${apiKey}`;
+            
+            console.log('Searching for location:', locationInput);
+            
             const geoRes = await fetch(geocodeUrl);
             
-            if (!geoRes.ok) throw new Error('Location not found');
+            if (!geoRes.ok) {
+                throw new Error('Failed to search for location');
+            }
             
             const geoData = await geoRes.json();
-            if (geoData.length === 0) throw new Error('Location not found');
+            
+            if (!geoData || geoData.length === 0) {
+                throw new Error('Location not found. Try a different search term.');
+            }
 
-            const { name, lat, lon, country } = geoData[0];
+            // Use the first (most relevant) result
+            const location = geoData[0];
+            
+            // Construct standardized location name from OpenWeather response
+            // Format: "City, State, Country" or "City, Country" if no state
+            const locationParts = [location.name];
+            
+            if (location.state) {
+                locationParts.push(location.state);
+            }
+            
+            locationParts.push(location.country);
+            
+            const standardizedName = locationParts.join(', ');
+            
+            console.log('Found location:', {
+                name: standardizedName,
+                lat: location.lat,
+                lon: location.lon,
+                local_names: location.local_names
+            });
 
-            // Save to backend
-            const res = await fetch('http://localhost:5000/api/user/locations', {
+            // Step 2: Save to backend with standardized name
+            const saveRes = await fetch('http://localhost:5000/api/user/locations', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -131,22 +215,40 @@ function ProfilePage() {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    location_name: `${name}, ${country}`,
-                    latitude: lat,
-                    longitude: lon
+                    location_name: standardizedName,
+                    latitude: location.lat,
+                    longitude: location.lon
                 })
             });
 
-            if (!res.ok) throw new Error('Failed to save location');
+            const saveData = await saveRes.json();
+            
+            if (!saveRes.ok) {
+                // Handle specific error cases
+                if (saveRes.status === 409) {
+                    throw new Error('This location is already in your saved locations');
+                }
+                throw new Error(saveData.message || 'Failed to save location');
+            }
 
-            const data = await res.json();
-            setSavedLocations(prev => [...prev, data.location]);
+            // Step 3: Update UI
+            setSavedLocations(prev => [...prev, saveData.location]);
             setLocationInput('');
-            setStatus({ loading: false, message: 'Location added successfully!', type: 'success' });
+            setStatus({ 
+                loading: false, 
+                message: `Added: ${standardizedName}`, 
+                type: 'success' 
+            });
             
             setTimeout(() => setStatus({ loading: false, message: '', type: '' }), 3000);
+            
         } catch (err) {
-            setStatus({ loading: false, message: err.message || 'Failed to add location', type: 'error' });
+            console.error('Error adding location:', err);
+            setStatus({ 
+                loading: false, 
+                message: err.message || 'Failed to add location. Please try again.', 
+                type: 'error' 
+            });
         }
     };
 
@@ -167,6 +269,42 @@ function ProfilePage() {
             setSavedLocations(prev => prev.filter(loc => loc.id !== locationId));
         } catch (err) {
             console.error('Failed to remove location:', err);
+        }
+    };
+
+    const handleDragEnd = async (event) => {
+        const { active, over } = event;
+
+        if (active.id !== over.id) {
+            setSavedLocations((items) => {
+                const oldIndex = items.findIndex((item) => item.id === active.id);
+                const newIndex = items.findIndex((item) => item.id === over.id);
+
+                const newItems = arrayMove(items, oldIndex, newIndex);
+
+                // Update ranks in backend
+                updateLocationRanks(newItems.map(item => item.id));
+
+                return newItems;
+            });
+        }
+    };
+
+    const updateLocationRanks = async (locationIds) => {
+        const token = localStorage.getItem('authToken');
+
+        try {
+            await fetch('http://localhost:5000/api/user/locations/reorder', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ locationIds })
+            });
+        } catch (err) {
+            console.error('Failed to update location ranks:', err);
         }
     };
 
@@ -345,11 +483,15 @@ function ProfilePage() {
                         </div>
                     )}
 
-                    {/* Saved Locations Tab */}
+                    {/* Saved Locations Tab - WITH DRAG AND DROP */}
                     {activeTab === 'locations' && (
                         <div className="profile-content">
                             <h2 className="profile-heading">Saved Locations</h2>
-                            
+
+                            <div className="location-help-text">
+                                💡 Drag locations to reorder them. The top location will be used for your 7-day forecast.
+                            </div>
+
                             <div className="location-input-group">
                                 <input
                                     type="text"
@@ -372,23 +514,24 @@ function ProfilePage() {
                                 {savedLocations.length === 0 ? (
                                     <p className="locations-empty">No saved locations yet. Add your favorite cities!</p>
                                 ) : (
-                                    savedLocations.map((loc) => (
-                                        <div key={loc.id} className="location-card">
-                                            <div className="location-info">
-                                                <span className="location-name">{loc.location_name}</span>
-                                                <span className="location-coords">
-                                                    {typeof loc.latitude === 'number' ? loc.latitude.toFixed(4) : loc.latitude}°, {typeof loc.longitude === 'number' ? loc.longitude.toFixed(4) : loc.longitude}°
-                                                </span>
-                                            </div>
-                                            <button
-                                                className="location-remove-btn"
-                                                onClick={() => removeLocation(loc.id)}
-                                                aria-label="Remove location"
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    ))
+                                    <DndContext
+                                        sensors={sensors}
+                                        collisionDetection={closestCenter}
+                                        onDragEnd={handleDragEnd}
+                                    >
+                                        <SortableContext
+                                            items={savedLocations.map(loc => loc.id)}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            {savedLocations.map((loc) => (
+                                                <SortableLocationItem
+                                                    key={loc.id}
+                                                    location={loc}
+                                                    onRemove={removeLocation}
+                                                />
+                                            ))}
+                                        </SortableContext>
+                                    </DndContext>
                                 )}
                             </div>
                         </div>

@@ -11,6 +11,8 @@ import './App.css'
 import Navbar from './components/navbar/navbar.jsx'
 import ProfilePage from './profile.jsx'
 import WeatherDetail from './weatherDetail.jsx'
+import WeeklyForecast from './components/WeeklyForecast/WeeklyForecast.jsx'
+import ApiLimitations from './pages/ApiLimitations.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -220,6 +222,19 @@ function Dashboard() {
 
 function App() {
   const location = useLocation();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('authToken');
+      setIsLoggedIn(!!token);
+    };
+
+    checkAuth();
+    window.addEventListener('storage', checkAuth);
+    return () => window.removeEventListener('storage', checkAuth);
+  }, []);
 
   // If on /live-map, render only the map page (full viewport)
   if (location.pathname === '/live-map') {
@@ -239,6 +254,10 @@ function App() {
     return <ProfilePage />;
   }
 
+  if (location.pathname === '/api-limitations') {
+    return <ApiLimitations />;
+  }
+
   // Otherwise, render the normal layout
   return (
     <>
@@ -254,6 +273,9 @@ function App() {
           <Route path="/surface-pressure" element={<WeatherDetail name="Surface Pressure" />} />
           <Route path="/sealevel-pressure" element={<WeatherDetail name="Sealevel Pressure" />} />
         </Routes>
+
+        {/* Weekly Forecast - Only visible for logged-in users */}
+        {isLoggedIn && <WeeklyForecast />}
         
         {/* Map Section - Embedded interactive map */}
         <section className="map-section">

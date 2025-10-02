@@ -326,6 +326,47 @@
     color: #ef4444;
 }
 
+.location-help-text {
+  padding: 1rem;
+  background: rgba(97, 255, 208, 0.1);
+  border: 1px solid rgba(97, 255, 208, 0.3);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  color: #61ffd0;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.sortable-location {
+  cursor: grab;
+}
+
+.sortable-location:active {
+  cursor: grabbing;
+}
+
+.location-drag-handle {
+  display: flex;
+  align-items: center;
+  font-size: 1.5rem;
+  color: #2fe79f;
+  cursor: grab;
+  padding-right: 1rem;
+  user-select: none;
+}
+
+.location-drag-handle:active {
+  cursor: grabbing;
+}
+
+.location-rank {
+  font-size: 0.85rem;
+  color: #2fe79f;
+  font-weight: 600;
+  margin-top: 0.25rem;
+  display: block;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .profile-container {

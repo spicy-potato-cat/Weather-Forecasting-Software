@@ -38,7 +38,7 @@ pool.on('error', (err) => {
   }
 });
 
-// Query helper function with sanitized error messages for client
+// Query helper function with proper error messages
 export const query = async (text, params) => {
   const start = Date.now();
   try {
@@ -46,30 +46,34 @@ export const query = async (text, params) => {
     const duration = Date.now() - start;
     
     if (process.env.NODE_ENV === 'development') {
-      console.log(`Query executed in ${duration}ms`);
+      console.log(`🗄️  Query executed in ${duration}ms`);
     }
     
     return res;
   } catch (error) {
     // Log detailed error server-side
-    console.error('Database query error:', error.message);
+    console.error('❌ Database query error:', error.message);
     console.error('Error code:', error.code);
+    console.error('Query:', text);
+    console.error('Params:', params);
     
     // Provide helpful hints server-side only
     if (error.code === 'ECONNREFUSED') {
-      console.error('PostgreSQL is not running');
+      console.error('💡 PostgreSQL is not running');
     } else if (error.code === '3D000') {
-      console.error(`Database "${process.env.DB_NAME}" does not exist`);
+      console.error(`💡 Database "${process.env.DB_NAME}" does not exist`);
     } else if (error.code === '28P01') {
-      console.error('Authentication failed - check credentials');
+      console.error('💡 Authentication failed - check credentials');
     } else if (error.code === '28000') {
-      console.error('Role does not exist - check DB_USER in .env');
+      console.error('💡 Role does not exist - check DB_USER in .env');
+    } else if (error.code === '42703') {
+      console.error('💡 Column does not exist - run database migrations');
+    } else if (error.code === '42P01') {
+      console.error('💡 Table does not exist - run database.sql schema');
     }
     
-    // Throw a sanitized error for the client (no internal details)
-    const sanitizedError = new Error('Account Creation Failed!');
-    sanitizedError.isOperational = true;
-    throw sanitizedError;
+    // Re-throw the original error instead of creating a generic one
+    throw error;
   }
 };
 

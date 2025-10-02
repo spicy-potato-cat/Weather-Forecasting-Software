@@ -55,6 +55,22 @@ CREATE TABLE weather_alerts (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Update saved_locations table to add rank column if not exists
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name='saved_locations' 
+        AND column_name='rank'
+    ) THEN
+        ALTER TABLE saved_locations ADD COLUMN rank INTEGER DEFAULT 0;
+    END IF;
+END $$;
+
+-- Create index on user_id and rank for faster queries
+CREATE INDEX IF NOT EXISTS idx_saved_locations_user_rank ON saved_locations(user_id, rank);
+
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
