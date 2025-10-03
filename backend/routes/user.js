@@ -38,13 +38,42 @@ router.put('/profile', authenticate, (req, res) => {
 router.get('/preferences', authenticate, async (req, res, next) => {
   try {
     const result = await query(
-      'SELECT * FROM user_preferences WHERE user_id = $1',
+      `SELECT 
+        preferred_location,
+        temperature_unit,
+        wind_speed_unit,
+        pressure_unit,
+        precipitation_unit,
+        time_format,
+        theme,
+        notifications_enabled,
+        created_at,
+        updated_at
+       FROM user_preferences 
+       WHERE user_id = $1`,
       [req.user.id]
     );
 
+    if (result.rows.length === 0) {
+      // Return default preferences if none exist
+      return res.json({
+        success: true,
+        preferences: {
+          preferred_location: '',
+          temperature_unit: 'celsius',
+          wind_speed_unit: 'kmh',
+          pressure_unit: 'hpa',
+          precipitation_unit: 'mm',
+          time_format: '24h',
+          theme: 'dark',
+          notifications_enabled: true,
+        }
+      });
+    }
+
     res.json({
       success: true,
-      preferences: result.rows[0] || null
+      preferences: result.rows[0]
     });
   } catch (error) {
     next(error);
@@ -65,24 +94,96 @@ router.put('/preferences', authenticate, async (req, res, next) => {
       notifications_enabled
     } = req.body;
 
+    // Validate temperature_unit
+    const validTempUnits = ['celsius', 'fahrenheit', 'kelvin'];
+    if (temperature_unit && !validTempUnits.includes(temperature_unit)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid temperature unit. Must be: celsius, fahrenheit, or kelvin'
+      });
+    }
+
+    // Validate wind_speed_unit
+    const validWindUnits = ['kmh', 'mph', 'ms', 'knots'];
+    if (wind_speed_unit && !validWindUnits.includes(wind_speed_unit)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid wind speed unit. Must be: kmh, mph, ms, or knots'
+      });
+    }
+
+    // Validate pressure_unit
+    const validPressureUnits = ['hpa', 'mb', 'inhg', 'mmhg'];
+    if (pressure_unit && !validPressureUnits.includes(pressure_unit)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pressure unit. Must be: hpa, mb, inhg, or mmhg'
+      });
+    }
+
+    // Validate precipitation_unit
+    const validPrecipUnits = ['mm', 'inches'];
+    if (precipitation_unit && !validPrecipUnits.includes(precipitation_unit)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid precipitation unit. Must be: mm or inches'
+      });
+    }
+
+    // Validate time_format
+    const validTimeFormats = ['12h', '24h'];
+    if (time_format && !validTimeFormats.includes(time_format)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid time format. Must be: 12h or 24h'
+      });
+    }
+
+    // Validate theme
+    const validThemes = ['dark', 'light', 'auto'];
+    if (theme && !validThemes.includes(theme)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid theme. Must be: dark, light, or auto'
+      });
+    }
+
     const result = await query(
       `INSERT INTO user_preferences 
-        (user_id, preferred_location, temperature_unit, wind_speed_unit, pressure_unit, precipitation_unit, time_format, theme, notifications_enabled)
+        (user_id, preferred_location, temperature_unit, wind_speed_unit, 
+         pressure_unit, precipitation_unit, time_format, theme, notifications_enabled)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (user_id) 
        DO UPDATE SET
-         preferred_location = EXCLUDED.preferred_location,
-         temperature_unit = EXCLUDED.temperature_unit,
-         wind_speed_unit = EXCLUDED.wind_speed_unit,
-         pressure_unit = EXCLUDED.pressure_unit,
-         precipitation_unit = EXCLUDED.precipitation_unit,
-         time_format = EXCLUDED.time_format,
-         theme = EXCLUDED.theme,
-         notifications_enabled = EXCLUDED.notifications_enabled,
+         preferred_location = COALESCE(EXCLUDED.preferred_location, user_preferences.preferred_location),
+         temperature_unit = COALESCE(EXCLUDED.temperature_unit, user_preferences.temperature_unit),
+         wind_speed_unit = COALESCE(EXCLUDED.wind_speed_unit, user_preferences.wind_speed_unit),
+         pressure_unit = COALESCE(EXCLUDED.pressure_unit, user_preferences.pressure_unit),
+         precipitation_unit = COALESCE(EXCLUDED.precipitation_unit, user_preferences.precipitation_unit),
+         time_format = COALESCE(EXCLUDED.time_format, user_preferences.time_format),
+         theme = COALESCE(EXCLUDED.theme, user_preferences.theme),
+         notifications_enabled = COALESCE(EXCLUDED.notifications_enabled, user_preferences.notifications_enabled),
          updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [req.user.id, preferred_location, temperature_unit, wind_speed_unit, pressure_unit, precipitation_unit, time_format, theme, notifications_enabled]
+      [
+        req.user.id, 
+        preferred_location || null, 
+        temperature_unit || 'celsius', 
+        wind_speed_unit || 'kmh',
+        pressure_unit || 'hpa',
+        precipitation_unit || 'mm',
+        time_format || '24h',
+        theme || 'dark',
+        notifications_enabled !== undefined ? notifications_enabled : true
+      ]
     );
+
+    console.log(`✅ Preferences updated for user ${req.user.id}:`, {
+      temperature_unit,
+      wind_speed_unit,
+      pressure_unit,
+      precipitation_unit
+    });
 
     res.json({
       success: true,
@@ -90,6 +191,7 @@ router.put('/preferences', authenticate, async (req, res, next) => {
       preferences: result.rows[0]
     });
   } catch (error) {
+    console.error('Error updating preferences:', error);
     next(error);
   }
 });

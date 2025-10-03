@@ -26,6 +26,10 @@ CREATE TABLE user_preferences (
     temperature_unit VARCHAR(10) DEFAULT 'celsius',
     wind_speed_unit VARCHAR(10) DEFAULT 'kmh',
     theme VARCHAR(20) DEFAULT 'dark',
+    pressure_unit VARCHAR(10) DEFAULT 'hpa',
+    precipitation_unit VARCHAR(10) DEFAULT 'mm',
+    time_format VARCHAR(10) DEFAULT '24h',
+    notifications_enabled BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id)
