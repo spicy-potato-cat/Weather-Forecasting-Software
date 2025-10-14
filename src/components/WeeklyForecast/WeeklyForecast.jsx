@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import './WeeklyForecast.css';
+import { usePreferences } from '../../hooks/usePreferences.js';
+import { formatTemperature, convertTemperature, getTemperatureSymbol } from '../../lib/math.js';
 
 function WeeklyForecast() {
   const [forecastData, setForecastData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [topLocation, setTopLocation] = useState(null);
+  const { preferences } = usePreferences();
 
   useEffect(() => {
     fetchTopLocationAndForecast();
@@ -342,9 +345,13 @@ function WeeklyForecast() {
             <div className="forecast-summary">{day.summary}</div>
 
             <div className="forecast-temps">
-              <span className="temp-high">{day.tempMax}°</span>
+              <span className="temp-high">
+                {Math.round(convertTemperature(day.tempMax, preferences.temperature_unit))}°
+              </span>
               <span className="temp-divider">/</span>
-              <span className="temp-low">{day.tempMin}°</span>
+              <span className="temp-low">
+                {Math.round(convertTemperature(day.tempMin, preferences.temperature_unit))}°
+              </span>
             </div>
 
             <div className="forecast-details">

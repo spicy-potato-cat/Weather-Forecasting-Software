@@ -1,6 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import NavBar from './components/navbar/navbar.jsx';
 import './weatherDetail.css';
+import { usePreferences } from './hooks/usePreferences.js';
+import {
+  formatTemperature,
+  formatWindSpeed,
+  formatPressure,
+  formatPrecipitation,
+  convertTemperature,
+  convertWindSpeed,
+  convertPressure,
+  convertPrecipitation,
+  getTemperatureSymbol,
+  getWindSpeedSymbol,
+  getPressureSymbol,
+  getPrecipitationSymbol,
+} from './lib/math.js';
 
 const ATTRIBUTE_CONFIG = {
   Temperature: {
@@ -20,6 +36,7 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'temperature_2m_max',
     archiveMinField: 'temperature_2m_min',
     archiveMeanField: 'temperature_2m_mean',
+    useUserUnit: 'temperature_unit',
   },
   Precipitation: {
     icon: '💧',
@@ -35,6 +52,7 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'precipitation_sum',
     archiveMinField: 'precipitation_sum',
     archiveMeanField: 'precipitation_sum',
+    useUserUnit: 'precipitation_unit',
   },
   Wind: {
     icon: '💨',
@@ -50,22 +68,24 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'wind_speed_10m_max',
     archiveMinField: 'wind_speed_10m_max',
     archiveMeanField: 'wind_speed_10m_max',
+    useUserUnit: 'wind_speed_unit',
   },
   AQI: {
     icon: '🌫️',
-    unit: 'AQI',
+    unit: 'μg/m³',
     color: '#ffd43b',
     gradient: 'linear-gradient(135deg, #ffd43b 0%, #fab005 100%)',
-    currentParams: 'air_pollution',
-    currentField: 'aqi',
-    dailyParams: 'air_pollution',
-    dailyMaxField: 'aqi',
-    dailyMinField: 'aqi',
-    archiveParams: 'air_pollution',
-    archiveMaxField: 'aqi',
-    archiveMinField: 'aqi',
-    archiveMeanField: 'aqi',
-    useOpenWeatherAQI: true, // Use OpenWeather Air Pollution API
+    currentParams: 'pm10,pm2_5,carbon_monoxide,nitrogen_dioxide',
+    currentField: 'pm10',
+    dailyParams: 'pm10_mean,pm2_5_mean',
+    dailyMaxField: 'pm10_mean',
+    dailyMinField: 'pm2_5_mean',
+    archiveParams: 'pm10_mean,pm2_5_mean',
+    archiveMaxField: 'pm10_mean',
+    archiveMinField: 'pm10_mean',
+    archiveMeanField: 'pm10_mean',
+    useOpenWeatherAQI: true,
+    useUserUnit: null, // AQI doesn't use user preferences
   },
   Visibility: {
     icon: '👁️',
@@ -82,6 +102,7 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'cloud_cover_mean',
     archiveMinField: 'cloud_cover_mean',
     archiveMeanField: 'cloud_cover_mean',
+    useUserUnit: null, // Visibility stays in km
   },
   'Surface Pressure': {
     icon: '🔽',
@@ -97,6 +118,7 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'surface_pressure_mean',
     archiveMinField: 'surface_pressure_mean',
     archiveMeanField: 'surface_pressure_mean',
+    useUserUnit: 'pressure_unit',
   },
   'Sealevel Pressure': {
     icon: '🌊',
@@ -112,6 +134,7 @@ const ATTRIBUTE_CONFIG = {
     archiveMaxField: 'pressure_msl_mean',
     archiveMinField: 'pressure_msl_mean',
     archiveMeanField: 'pressure_msl_mean',
+    useUserUnit: 'pressure_unit',
   },
 };
 
@@ -127,6 +150,54 @@ function WeatherDetail({ name }) {
   const [selectedTimeframe, setSelectedTimeframe] = useState('7days');
 
   const config = ATTRIBUTE_CONFIG[name] || ATTRIBUTE_CONFIG.Temperature;
+  const { preferences } = usePreferences();
+
+  // Get user's preferred unit for this attribute
+  const userUnit = config.useUserUnit ? preferences[config.useUserUnit] : null;
+
+  // Helper to get display unit symbol
+  const getDisplayUnit = () => {
+    if (!config.useUserUnit) return config.unit;
+    
+    switch (config.useUserUnit) {
+      case 'temperature_unit':
+        return getTemperatureSymbol(userUnit);
+      case 'wind_speed_unit':
+        return getWindSpeedSymbol(userUnit);
+      case 'pressure_unit':
+        return getPressureSymbol(userUnit);
+      case 'precipitation_unit':
+        return getPrecipitationSymbol(userUnit);
+      default:
+        return config.unit;
+    }
+  };
+
+  // Helper to convert value based on attribute type
+  const convertValue = (value) => {
+    if (value === null || value === undefined || isNaN(value)) return null;
+    if (!config.useUserUnit) return value;
+
+    switch (config.useUserUnit) {
+      case 'temperature_unit':
+        return convertTemperature(value, userUnit);
+      case 'wind_speed_unit':
+        return convertWindSpeed(value, userUnit);
+      case 'pressure_unit':
+        return convertPressure(value, userUnit);
+      case 'precipitation_unit':
+        return convertPrecipitation(value, userUnit);
+      default:
+        return value;
+    }
+  };
+
+  // Helper to format value with unit
+  const formatValue = (value, decimals = 1) => {
+    const converted = convertValue(value);
+    if (converted === null) return '--';
+    return `${converted.toFixed(decimals)}${getDisplayUnit()}`;
+  };
 
   useEffect(() => {
     // Get user's location on mount
@@ -260,7 +331,7 @@ function WeatherDetail({ name }) {
           setCurrentData({
             value: aqiScaled,
             humidity: 0,
-            weatherCode: aqiValue,
+            weatherCode: 0,
             timestamp: new Date(),
             // Store additional pollutant data
             pm25: pm25,
@@ -726,17 +797,14 @@ function WeatherDetail({ name }) {
         </div>
       </div>
 
-      {/* Current Data Section */}
+      {/* Current Data Section - WITH UNIT CONVERSION */}
       {currentData && (
         <div className="current-weather-section">
           <h2>Current {name}</h2>
           <div className="current-temp-card" style={{ borderColor: config.color }}>
             <div className="main-temp">
-              <span 
-                className="temp-value" 
-                style={{ color: config.color }}
-              >
-                {Math.round(currentData.value * 10) / 10}{config.unit}
+              <span className="temp-value" style={{ color: config.color }}>
+                {formatValue(currentData.value)}
               </span>
               <div className="temp-details">
                 <p className="timestamp">Updated: {currentData.timestamp.toLocaleTimeString()}</p>
@@ -747,7 +815,7 @@ function WeatherDetail({ name }) {
         </div>
       )}
 
-      {/* 7-Day Forecast Section */}
+      {/* 7-Day Forecast Section - WITH UNIT CONVERSION */}
       <div className="forecast-section">
         <h2>7-Day {name} Forecast</h2>
         <div className="forecast-grid">
@@ -757,12 +825,12 @@ function WeatherDetail({ name }) {
                 {day.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
               </div>
               <div className="forecast-temps">
-                <span className="high-temp" style={{ color: config.color }}>
-                  {Math.round(day.max * 10) / 10}{config.unit}
+                <span className="temp-high" style={{ color: config.color }}>
+                  {formatValue(day.max)}
                 </span>
                 {day.max !== day.min && (
-                  <span className="low-temp" style={{ color: config.color, opacity: 0.7 }}>
-                    {Math.round(day.min * 10) / 10}{config.unit}
+                  <span className="temp-low" style={{ color: config.color, opacity: 0.7 }}>
+                    {formatValue(day.min)}
                   </span>
                 )}
               </div>
@@ -771,20 +839,12 @@ function WeatherDetail({ name }) {
         </div>
       </div>
 
-      {/* Historical Data Section */}
+      {/* Historical Data Section - WITH UNIT CONVERSION */}
       <div className="historical-section">
         <h2>Historical {name} Data ({selectedTimeframe})</h2>
         
         {config.useOpenWeatherAQI && (
-          <div className="historical-notice" style={{
-            padding: '0.75rem',
-            background: 'rgba(255, 208, 67, 0.15)',
-            border: '1px solid rgba(255, 208, 67, 0.3)',
-            borderRadius: '8px',
-            marginBottom: '1rem',
-            color: '#ffd43b',
-            fontSize: '0.9rem'
-          }}>
+          <div className="historical-notice" style={{ padding: '0.75rem', background: 'rgba(255, 208, 67, 0.15)', border: '1px solid rgba(255, 208, 67, 0.3)', borderRadius: '8px', marginBottom: '1rem', color: '#ffd43b', fontSize: '0.9rem' }}>
             ℹ️ Historical AQI data requires a premium API subscription. Showing estimated trends based on current conditions.
           </div>
         )}
@@ -794,30 +854,14 @@ function WeatherDetail({ name }) {
             <p>{name} Trend Chart</p>
             <div className="simple-chart">
               {historical.slice(-14).map((day, index) => {
-                // Get all max values for normalization
                 const allMaxValues = historical.slice(-14).map(d => d.max);
                 const allMinValues = historical.slice(-14).map(d => d.min);
                 
                 return (
                   <div key={index} className="chart-bar">
                     <div className="bar-container">
-                      <div 
-                        className="temp-bar max-bar" 
-                        style={{ 
-                          height: `${normalizeBarHeight(day.max, allMaxValues)}px`,
-                          backgroundColor: config.color
-                        }}
-                        title={`Max: ${day.max.toFixed(1)}${config.unit}`}
-                      ></div>
-                      <div 
-                        className="temp-bar min-bar" 
-                        style={{ 
-                          height: `${normalizeBarHeight(day.min, allMinValues)}px`,
-                          backgroundColor: config.color,
-                          opacity: 0.6
-                        }}
-                        title={`Min: ${day.min.toFixed(1)}${config.unit}`}
-                      ></div>
+                      <div className="temp-bar max-bar" style={{ height: `${normalizeBarHeight(day.max, allMaxValues)}px`, backgroundColor: config.color }} title={`Max: ${formatValue(day.max)}`}></div>
+                      <div className="temp-bar min-bar" style={{ height: `${normalizeBarHeight(day.min, allMinValues)}px`, backgroundColor: config.color, opacity: 0.6 }} title={`Min: ${formatValue(day.min)}`}></div>
                     </div>
                     <div className="chart-label">
                       {day.date.getDate()}/{day.date.getMonth() + 1}
@@ -835,25 +879,25 @@ function WeatherDetail({ name }) {
             <div className="stat-card" style={{ borderLeftColor: config.color }}>
               <span className="stat-label">Average High</span>
               <span className="stat-value" style={{ color: config.color }}>
-                {(historical.reduce((sum, day) => sum + day.max, 0) / historical.length).toFixed(1)}{config.unit}
+                {formatValue(historical.reduce((sum, day) => sum + day.max, 0) / historical.length)}
               </span>
             </div>
             <div className="stat-card" style={{ borderLeftColor: config.color }}>
               <span className="stat-label">Average Low</span>
               <span className="stat-value" style={{ color: config.color }}>
-                {(historical.reduce((sum, day) => sum + day.min, 0) / historical.length).toFixed(1)}{config.unit}
+                {formatValue(historical.reduce((sum, day) => sum + day.min, 0) / historical.length)}
               </span>
             </div>
             <div className="stat-card" style={{ borderLeftColor: config.color }}>
               <span className="stat-label">Highest Recorded</span>
               <span className="stat-value" style={{ color: config.color }}>
-                {Math.max(...historical.map(day => day.max)).toFixed(1)}{config.unit}
+                {formatValue(Math.max(...historical.map(day => day.max)))}
               </span>
             </div>
             <div className="stat-card" style={{ borderLeftColor: config.color }}>
               <span className="stat-label">Lowest Recorded</span>
               <span className="stat-value" style={{ color: config.color }}>
-                {Math.min(...historical.map(day => day.min)).toFixed(1)}{config.unit}
+                {formatValue(Math.min(...historical.map(day => day.min)))}
               </span>
             </div>
           </div>

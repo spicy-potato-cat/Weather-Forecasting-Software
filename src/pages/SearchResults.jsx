@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import NavBar from '../components/navbar/navbar.jsx';
+import { usePreferences } from '../hooks/usePreferences.js';
+import { 
+  formatTemperature, 
+  formatWindSpeed, 
+  formatPressure,
+  convertTemperature,
+  convertWindSpeed,
+  convertPressure,
+  getTemperatureSymbol,
+  getWindSpeedSymbol,
+  getPressureSymbol
+} from '../lib/math.js';
 import './SearchResults.css';
 
 function SearchResults() {
@@ -15,6 +27,7 @@ function SearchResults() {
   const [forecast, setForecast] = useState(null);
   const [airQuality, setAirQuality] = useState(null);
   const [astronomy, setAstronomy] = useState(null);
+  const { preferences } = usePreferences();
 
   useEffect(() => {
     if (query) {
@@ -166,7 +179,7 @@ function SearchResults() {
           </button>
         </div>
 
-        {/* Current Weather Hero Section */}
+        {/* Current Weather Hero Section - WITH UNIT CONVERSION */}
         <div className="weather-hero">
           <div className="hero-left">
             <img
@@ -175,30 +188,32 @@ function SearchResults() {
               className="weather-icon-large"
             />
             <div className="hero-temp">
-              <span className="temp-value">{Math.round(currentWeather.main.temp)}°</span>
-              <span className="temp-unit">C</span>
+              <span className="temp-value">
+                {Math.round(convertTemperature(currentWeather.main.temp, preferences.temperature_unit))}°
+              </span>
+              <span className="temp-unit">{getTemperatureSymbol(preferences.temperature_unit).replace('°', '')}</span>
             </div>
           </div>
           <div className="hero-right">
             <h2 className="weather-condition">{currentWeather.weather[0].main}</h2>
             <p className="weather-description">{currentWeather.weather[0].description}</p>
             <div className="feels-like">
-              Feels like <strong>{Math.round(currentWeather.main.feels_like)}°C</strong>
+              Feels like <strong>{formatTemperature(currentWeather.main.feels_like, preferences.temperature_unit)}</strong>
             </div>
             <div className="temp-range">
-              <span>↑ {Math.round(currentWeather.main.temp_max)}°</span>
-              <span>↓ {Math.round(currentWeather.main.temp_min)}°</span>
+              <span>↑ {formatTemperature(currentWeather.main.temp_max, preferences.temperature_unit)}</span>
+              <span>↓ {formatTemperature(currentWeather.main.temp_min, preferences.temperature_unit)}</span>
             </div>
           </div>
         </div>
 
-        {/* Primary Metrics Grid */}
+        {/* Primary Metrics Grid - WITH UNIT CONVERSION */}
         <div className="metrics-grid primary">
           <div className="metric-card">
             <div className="metric-icon">💨</div>
             <div className="metric-content">
               <span className="metric-label">Wind Speed</span>
-              <span className="metric-value">{(currentWeather.wind.speed * 3.6).toFixed(1)} km/h</span>
+              <span className="metric-value">{formatWindSpeed(currentWeather.wind.speed, preferences.wind_speed_unit)}</span>
               <span className="metric-sub">{getWindDirection(currentWeather.wind.deg)} ({currentWeather.wind.deg}°)</span>
             </div>
           </div>
@@ -208,7 +223,7 @@ function SearchResults() {
             <div className="metric-content">
               <span className="metric-label">Humidity</span>
               <span className="metric-value">{currentWeather.main.humidity}%</span>
-              <span className="metric-sub">Dew point: {Math.round(currentWeather.main.temp - ((100 - currentWeather.main.humidity) / 5))}°C</span>
+              <span className="metric-sub">Dew point: {formatTemperature(currentWeather.main.temp - ((100 - currentWeather.main.humidity) / 5), preferences.temperature_unit)}</span>
             </div>
           </div>
 
@@ -216,8 +231,8 @@ function SearchResults() {
             <div className="metric-icon">🔽</div>
             <div className="metric-content">
               <span className="metric-label">Pressure</span>
-              <span className="metric-value">{currentWeather.main.pressure} hPa</span>
-              <span className="metric-sub">Sea level: {currentWeather.main.sea_level || currentWeather.main.pressure} hPa</span>
+              <span className="metric-value">{formatPressure(currentWeather.main.pressure, preferences.pressure_unit)}</span>
+              <span className="metric-sub">Sea level: {formatPressure(currentWeather.main.sea_level || currentWeather.main.pressure, preferences.pressure_unit)}</span>
             </div>
           </div>
 
@@ -299,7 +314,7 @@ function SearchResults() {
           </div>
         )}
 
-        {/* 5-Day Forecast */}
+        {/* 5-Day Forecast - WITH UNIT CONVERSION */}
         {forecast && (
           <div className="forecast-section">
             <h2 className="section-title">📅 5-Day Forecast</h2>
@@ -316,8 +331,12 @@ function SearchResults() {
                   />
                   <span className="forecast-desc">{item.weather[0].main}</span>
                   <div className="forecast-temps">
-                    <span className="temp-high">{Math.round(item.main.temp_max)}°</span>
-                    <span className="temp-low">{Math.round(item.main.temp_min)}°</span>
+                    <span className="temp-high">
+                      {Math.round(convertTemperature(item.main.temp_max, preferences.temperature_unit))}°
+                    </span>
+                    <span className="temp-low">
+                      {Math.round(convertTemperature(item.main.temp_min, preferences.temperature_unit))}°
+                    </span>
                   </div>
                   <span className="forecast-precip">💧 {item.pop * 100}%</span>
                 </div>
@@ -326,19 +345,21 @@ function SearchResults() {
           </div>
         )}
 
-        {/* Additional Details */}
+        {/* Additional Details - WITH UNIT CONVERSION */}
         <div className="additional-details">
           <h2 className="section-title">📊 Additional Information</h2>
           <div className="details-grid">
             <div className="detail-item">
               <span className="detail-label">Ground Level Pressure</span>
-              <span className="detail-value">{currentWeather.main.grnd_level || currentWeather.main.pressure} hPa</span>
+              <span className="detail-value">
+                {formatPressure(currentWeather.main.grnd_level || currentWeather.main.pressure, preferences.pressure_unit)}
+              </span>
             </div>
 
             {currentWeather.wind.gust && (
               <div className="detail-item">
                 <span className="detail-label">Wind Gust</span>
-                <span className="detail-value">{(currentWeather.wind.gust * 3.6).toFixed(1)} km/h</span>
+                <span className="detail-value">{formatWindSpeed(currentWeather.wind.gust, preferences.wind_speed_unit)}</span>
               </div>
             )}
 

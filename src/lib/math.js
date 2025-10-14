@@ -1,6 +1,5 @@
 /**
- * Math utilities for wind visualization
- * All functions are pure and tested
+ * Math utilities for weather calculations and unit conversions
  */
 
 /**
@@ -106,6 +105,274 @@ export function dirFromDegSpeedMsToUV(dirFromDeg, speedMs) {
   const u = speedMs * Math.sin(r); // eastward
   const v = speedMs * Math.cos(r); // northward
   return { u, v };
+}
+
+/**
+ * Convert Celsius to Fahrenheit
+ */
+export function celsiusToFahrenheit(celsius) {
+  return (celsius * 9/5) + 32;
+}
+
+/**
+ * Convert Celsius to Kelvin
+ */
+export function celsiusToKelvin(celsius) {
+  return celsius + 273.15;
+}
+
+/**
+ * Convert Fahrenheit to Celsius
+ */
+export function fahrenheitToCelsius(fahrenheit) {
+  return (fahrenheit - 32) * 5/9;
+}
+
+/**
+ * Convert Kelvin to Celsius
+ */
+export function kelvinToCelsius(kelvin) {
+  return kelvin - 273.15;
+}
+
+/**
+ * Convert temperature from Celsius to target unit
+ */
+export function convertTemperature(celsius, targetUnit) {
+  if (!celsius || isNaN(celsius)) return null;
+  
+  switch (targetUnit) {
+    case 'fahrenheit':
+      return celsiusToFahrenheit(celsius);
+    case 'kelvin':
+      return celsiusToKelvin(celsius);
+    case 'celsius':
+    default:
+      return celsius;
+  }
+}
+
+/**
+ * Get temperature unit symbol
+ */
+export function getTemperatureSymbol(unit) {
+  switch (unit) {
+    case 'fahrenheit':
+      return '°F';
+    case 'kelvin':
+      return 'K';
+    case 'celsius':
+    default:
+      return '°C';
+  }
+}
+
+// ============================================================================
+// WIND SPEED CONVERSIONS
+// ============================================================================
+
+/**
+ * Convert m/s to km/h
+ */
+export function msToKmh(ms) {
+  return ms * 3.6;
+}
+
+/**
+ * Convert m/s to mph
+ */
+export function msToMph(ms) {
+  return ms * 2.23694;
+}
+
+/**
+ * Convert m/s to knots
+ */
+export function msToKnots(ms) {
+  return ms * 1.94384;
+}
+
+/**
+ * Convert wind speed from m/s to target unit
+ */
+export function convertWindSpeed(ms, targetUnit) {
+  if (!ms || isNaN(ms)) return null;
+  
+  switch (targetUnit) {
+    case 'mph':
+      return msToMph(ms);
+    case 'knots':
+      return msToKnots(ms);
+    case 'ms':
+      return ms;
+    case 'kmh':
+    default:
+      return msToKmh(ms);
+  }
+}
+
+/**
+ * Get wind speed unit symbol
+ */
+export function getWindSpeedSymbol(unit) {
+  switch (unit) {
+    case 'mph':
+      return 'mph';
+    case 'knots':
+      return 'knots';
+    case 'ms':
+      return 'm/s';
+    case 'kmh':
+    default:
+      return 'km/h';
+  }
+}
+
+// ============================================================================
+// PRESSURE CONVERSIONS
+// ============================================================================
+
+/**
+ * Convert hPa to mb (1:1 conversion)
+ */
+export function hpaToMb(hpa) {
+  return hpa;
+}
+
+/**
+ * Convert hPa to inHg
+ */
+export function hpaToInHg(hpa) {
+  return hpa * 0.02953;
+}
+
+/**
+ * Convert hPa to mmHg
+ */
+export function hpaToMmHg(hpa) {
+  return hpa * 0.750062;
+}
+
+/**
+ * Convert pressure from hPa to target unit
+ */
+export function convertPressure(hpa, targetUnit) {
+  if (!hpa || isNaN(hpa)) return null;
+  
+  switch (targetUnit) {
+    case 'mb':
+      return hpaToMb(hpa);
+    case 'inhg':
+      return hpaToInHg(hpa);
+    case 'mmhg':
+      return hpaToMmHg(hpa);
+    case 'hpa':
+    default:
+      return hpa;
+  }
+}
+
+/**
+ * Get pressure unit symbol
+ */
+export function getPressureSymbol(unit) {
+  switch (unit) {
+    case 'mb':
+      return 'mb';
+    case 'inhg':
+      return 'inHg';
+    case 'mmhg':
+      return 'mmHg';
+    case 'hpa':
+    default:
+      return 'hPa';
+  }
+}
+
+// ============================================================================
+// PRECIPITATION CONVERSIONS
+// ============================================================================
+
+/**
+ * Convert mm to inches
+ */
+export function mmToInches(mm) {
+  return mm * 0.0393701;
+}
+
+/**
+ * Convert inches to mm
+ */
+export function inchesToMm(inches) {
+  return inches * 25.4;
+}
+
+/**
+ * Convert precipitation from mm to target unit
+ */
+export function convertPrecipitation(mm, targetUnit) {
+  if (!mm || isNaN(mm)) return null;
+  
+  switch (targetUnit) {
+    case 'inches':
+      return mmToInches(mm);
+    case 'mm':
+    default:
+      return mm;
+  }
+}
+
+/**
+ * Get precipitation unit symbol
+ */
+export function getPrecipitationSymbol(unit) {
+  switch (unit) {
+    case 'inches':
+      return 'in';
+    case 'mm':
+    default:
+      return 'mm';
+  }
+}
+
+// ============================================================================
+// FORMATTING HELPERS
+// ============================================================================
+
+/**
+ * Format temperature with unit
+ */
+export function formatTemperature(celsius, unit, decimals = 1) {
+  const converted = convertTemperature(celsius, unit);
+  if (converted === null) return '--';
+  return `${converted.toFixed(decimals)}${getTemperatureSymbol(unit)}`;
+}
+
+/**
+ * Format wind speed with unit
+ */
+export function formatWindSpeed(ms, unit, decimals = 1) {
+  const converted = convertWindSpeed(ms, unit);
+  if (converted === null) return '--';
+  return `${converted.toFixed(decimals)} ${getWindSpeedSymbol(unit)}`;
+}
+
+/**
+ * Format pressure with unit
+ */
+export function formatPressure(hpa, unit, decimals = 1) {
+  const converted = convertPressure(hpa, unit);
+  if (converted === null) return '--';
+  return `${converted.toFixed(decimals)} ${getPressureSymbol(unit)}`;
+}
+
+/**
+ * Format precipitation with unit
+ */
+export function formatPrecipitation(mm, unit, decimals = 1) {
+  const converted = convertPrecipitation(mm, unit);
+  if (converted === null) return '--';
+  return `${converted.toFixed(decimals)} ${getPrecipitationSymbol(unit)}`;
 }
 
 

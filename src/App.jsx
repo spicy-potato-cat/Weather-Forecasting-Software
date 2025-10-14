@@ -14,6 +14,8 @@ import WeatherDetail from './weatherDetail.jsx'
 import WeeklyForecast from './components/WeeklyForecast/WeeklyForecast.jsx'
 import ApiLimitations from './pages/ApiLimitations.jsx'
 import SearchResults from './pages/SearchResults.jsx'
+import { usePreferences } from './hooks/usePreferences.js';
+import { formatTemperature, formatWindSpeed, formatPressure } from './lib/math.js';
 
 // Attribute tab list
 const attributes = [
@@ -34,6 +36,7 @@ function Dashboard() {
   const [location, setLocation] = useState(null)
   const [loading, setLoading] = useState(true)
   const [aqiData, setAqiData] = useState(null);
+  const { preferences } = usePreferences();
 
   useEffect(() => {
     getUserLocation()
@@ -157,19 +160,19 @@ function Dashboard() {
 
     switch (selected) {
       case 'Temperature':
-        return `${weatherData.main.temp.toFixed(1)}°C`
+        return formatTemperature(weatherData.main.temp, preferences.temperature_unit);
       case 'Precipitation':
         return `${weatherData.main.humidity}% humidity`
       case 'Wind':
-        return `${(weatherData.wind.speed * 3.6).toFixed(1)} km/h`
+        return formatWindSpeed(weatherData.wind.speed, preferences.wind_speed_unit);
       case 'AQI':
         return aqiData ? `${Math.round(aqiData.aqi)} AQI` : 'Loading...'
       case 'Visibility':
         return `${(weatherData.visibility / 1000).toFixed(1)} km`
       case 'Surface Pressure':
-        return `${weatherData.main.pressure} hPa`
+        return formatPressure(weatherData.main.pressure, preferences.pressure_unit);
       case 'Sealevel Pressure':
-        return `${weatherData.main.sea_level || weatherData.main.pressure} hPa`
+        return formatPressure(weatherData.main.sea_level || weatherData.main.pressure, preferences.pressure_unit);
       default:
         return '--'
     }

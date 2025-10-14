@@ -104,6 +104,7 @@ function ProfilePage() {
                 const data = await res.json();
                 if (data.preferences) {
                     setPreferences(prev => ({ ...prev, ...data.preferences }));
+                    console.log('Loaded preferences:', data.preferences);
                 }
             }
         } catch (err) {
@@ -131,6 +132,7 @@ function ProfilePage() {
 
     const handlePreferenceChange = (key, value) => {
         setPreferences(prev => ({ ...prev, [key]: value }));
+        console.log(`Preference changed: ${key} = ${value}`);
     };
 
     const savePreferences = async () => {
@@ -139,6 +141,8 @@ function ProfilePage() {
         const token = localStorage.getItem('authToken');
         
         try {
+            console.log('Saving preferences:', preferences);
+            
             const res = await fetch('http://localhost:5000/api/user/preferences', {
                 method: 'PUT',
                 headers: {
@@ -149,13 +153,31 @@ function ProfilePage() {
                 body: JSON.stringify(preferences)
             });
 
-            if (!res.ok) throw new Error('Failed to save preferences');
+            const data = await res.json();
 
-            setStatus({ loading: false, message: 'Preferences saved successfully!', type: 'success' });
+            if (!res.ok) {
+                throw new Error(data.message || 'Failed to save preferences');
+            }
+
+            console.log('✅ Preferences saved:', data.preferences);
+
+            setStatus({ 
+                loading: false, 
+                message: 'Preferences saved successfully!', 
+                type: 'success' 
+            });
+            
+            // Dispatch custom event to notify other components
+            window.dispatchEvent(new Event('preferencesUpdated'));
             
             setTimeout(() => setStatus({ loading: false, message: '', type: '' }), 3000);
         } catch (err) {
-            setStatus({ loading: false, message: err.message || 'Failed to save preferences', type: 'error' });
+            console.error('Save preferences error:', err);
+            setStatus({ 
+                loading: false, 
+                message: err.message || 'Failed to save preferences', 
+                type: 'error' 
+            });
         }
     };
 
