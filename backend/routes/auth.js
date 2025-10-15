@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { query } from '../config/database.js';
+import emailService from '../src/services/emailService.js';
 
 const router = express.Router();
 
@@ -26,12 +27,10 @@ router.post('/register',
 
       const { email, password, name } = req.body;
 
-      // Server-side logging only
       if (process.env.NODE_ENV === 'development') {
         console.log(`📝 Registration attempt for: ${email}`);
       }
 
-      // Check if user already exists
       const existingUser = await query(
         'SELECT id FROM users WHERE email = $1',
         [email]
@@ -52,6 +51,19 @@ router.post('/register',
       );
 
       const user = result.rows[0];
+      
+      // Create hMail account in development (non-blocking, don't fail if it errors)
+      if (process.env.NODE_ENV === 'development') {
+        // Run asynchronously without waiting
+        emailService.createHmailAccount(email, password)
+          .then(() => {
+            console.log(`✅ hMail account created for: ${email}`);
+          })
+          .catch((hmailError) => {
+            console.error(`⚠️ hMail account creation failed (non-critical):`, hmailError.message);
+            // Don't fail registration - continue normally
+          });
+      }
       
       if (process.env.NODE_ENV === 'development') {
         console.log(`✅ User created: ${user.email} (ID: ${user.id})`);
@@ -74,7 +86,7 @@ router.post('/register',
         }
       });
     } catch (error) {
-      next(error); // Pass to error handler
+      next(error);
     }
   }
 );
@@ -137,7 +149,7 @@ router.post('/login',
       );
 
       if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ Login successful: ${email}`);
+        console.log(`Login successful: ${email}`);
       }
 
       res.json({
@@ -158,7 +170,7 @@ router.post('/login',
 
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
-  console.log('🚪 Logout request received');
+  console.log('Logout request received');
   res.json({
     success: true,
     message: 'Logout successful'
