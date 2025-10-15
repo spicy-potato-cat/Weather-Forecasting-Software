@@ -14,6 +14,9 @@ import WeatherDetail from './weatherDetail.jsx'
 import WeeklyForecast from './components/WeeklyForecast/WeeklyForecast.jsx'
 import ApiLimitations from './pages/ApiLimitations.jsx'
 import SearchResults from './pages/SearchResults.jsx'
+import TermsAndConditions from './pages/TermsAndConditions.jsx'
+import PrivacyPolicy from './pages/PrivacyPolicy.jsx'
+import HelpSupport from './pages/HelpSupport.jsx'
 import { usePreferences } from './hooks/usePreferences.js';
 import { formatTemperature, formatWindSpeed, formatPressure } from './lib/math.js';
 
@@ -264,6 +267,18 @@ function App() {
 
   if (location.pathname === '/search') {
     return <SearchResults />;
+  }
+
+  if (location.pathname === '/terms') {
+    return <TermsAndConditions />;
+  }
+
+  if (location.pathname === '/privacy') {
+    return <PrivacyPolicy />;
+  }
+
+  if (location.pathname === '/help') {
+    return <HelpSupport />;
   }
 
   // Otherwise, render the normal layout
