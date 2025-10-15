@@ -1,11 +1,10 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticate } from '../../middleware/auth.js'; // FIXED: Correct path (go up 2 levels)
-import EmailService from '../services/emailService.js'; // FIXED: Removed duplicate 'src'
+import { authenticate } from '../../middleware/auth.js';
+import emailService from '../services/emailService.js';
 
 const router = express.Router();
 
-// POST /api/protected/email/simulate
 router.post(
   '/simulate',
   authenticate,
@@ -22,27 +21,35 @@ router.post(
         return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
       }
 
-      if (!process.env.SENDER_MAIL_API_KEY) {
-        return res.status(500).json({ success: false, message: 'SENDER_MAIL_API_KEY not set' });
+      if (!process.env.MAILTRAP_API_KEY) { // FIXED: Changed to MAILTRAP_API_KEY
+        return res.status(500).json({ success: false, message: 'MAILTRAP_API_KEY not set' });
       }
 
       const { to, subject, template, variables } = req.body;
 
-      // Try to call a simulate function if EmailService exposes one,
-      // otherwise call send() with a simulate flag.
-      let result;
-      if (typeof EmailService.simulate === 'function') {
-        result = await EmailService.simulate({ to, subject, template, variables, user: req.user });
-      } else if (typeof EmailService.send === 'function') {
-        // Many services accept an options flag; adjust if your service API differs.
-        result = await EmailService.send({ to, subject, template, variables, simulate: true, user: req.user });
-      } else {
-        return res.status(500).json({ success: false, message: 'Email service not available' });
-      }
+      const result = await emailService.simulate({
+        to,
+        subject,
+        template,
+        variables,
+        user: req.user
+      });
 
-      res.json({ success: true, message: 'Simulated send queued', result });
+      return res.json({
+        success: true,
+        message: 'Simulated send queued',
+        result
+      });
     } catch (err) {
-      next(err);
+      console.error('Email simulation error:', err);
+      return res.status(500).json({
+        success: false,
+        message: err.message,
+        debug: {
+          originalMessage: err.message,
+          code: err.code
+        }
+      });
     }
   }
 );
