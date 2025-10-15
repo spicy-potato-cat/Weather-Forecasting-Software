@@ -1,0 +1,63 @@
+.alert-banner-container {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  width: 90%;
+  max-width: 800px;
+}
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  animation: slideDown 0.3s ease;
+}
+
+.alert-banner--emergency {
+  background: rgba(255, 0, 0, 0.9);
+  border: 2px solid #ff0000;
+  color: white;
+}
+
+.alert-banner--warning {
+  background: rgba(255, 165, 0, 0.9);
+  border: 2px solid #ffa500;
+  color: white;
+}
+
+.alert-banner--watch {
+  background: rgba(255, 255, 0, 0.9);
+  border: 2px solid #ffff00;
+  color: #000;
+}
+
+.alert-icon {
+  font-size: 2rem;
+}
+
+.alert-content strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 1.1rem;
+}
+
+.alert-content p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

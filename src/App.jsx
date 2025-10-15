@@ -16,6 +16,7 @@ import ApiLimitations from './pages/ApiLimitations.jsx'
 import SearchResults from './pages/SearchResults.jsx'
 import { usePreferences } from './hooks/usePreferences.js';
 import { formatTemperature, formatWindSpeed, formatPressure } from './lib/math.js';
+import AlertBanner from './components/AlertBanner/AlertBanner.jsx'
 
 // Attribute tab list
 const attributes = [
@@ -270,6 +271,7 @@ function App() {
   return (
     <>
       <Navbar title="Aether" />
+      <AlertBanner />
       <div className="glass">
         <Routes>
           <Route path="/" element={<Dashboard />} />

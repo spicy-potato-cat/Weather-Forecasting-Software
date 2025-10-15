@@ -5,6 +5,7 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import weatherRoutes from './routes/weather.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import emailRoutes from './src/routes/email.js'; // FIXED: Correct path
 
 // Load environment variables
 dotenv.config();
@@ -88,6 +89,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/weather', weatherRoutes);
+app.use('/api/email', emailRoutes); // FIXED: Changed from /api/protected/email to /api/email
 
 // 404 handler
 app.use((req, res) => {
