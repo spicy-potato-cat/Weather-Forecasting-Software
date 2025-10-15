@@ -79,6 +79,17 @@ export default function NavBar({ title = "Aether" }) {
         navigate('/');
     };
 
+    const handleLogoClick = () => {
+        navigate('/');
+    };
+
+    const menuItems = [
+        { icon: '🏠', label: 'Dashboard', path: '/' },
+        { icon: '🗺️', label: 'Live Map', path: '/live-map' },
+        { icon: '📊', label: 'API Limitations', path: '/api-limitations' },
+        { icon: '❓', label: 'Help & Support', path: '/help' }
+    ];
+
     return (
         <div>
             <>
@@ -87,7 +98,7 @@ export default function NavBar({ title = "Aether" }) {
                 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Mozilla+Headline:wght@200..700&display=swap" rel="stylesheet" />
             </>
             <nav className="navbar">
-                <div className="navbar-left">
+                <div className="navbar-left" onClick={handleLogoClick} style={{ cursor: 'pointer' }}>
                     <img src={Logo} alt="Logo" className="site-logo" />
                     <span className="site-title">{title}</span>
                 </div>
@@ -158,6 +169,21 @@ export default function NavBar({ title = "Aether" }) {
                                             </button>
                                         </>
                                     )}
+
+                                    {/* Additional Menu Items */}
+                                    {menuItems.map((item) => (
+                                        <button 
+                                            key={item.label}
+                                            className="menu-item"
+                                            onClick={() => {
+                                                setIsMenuOpen(false);
+                                                navigate(item.path);
+                                            }}
+                                        >
+                                            <span className="menu-item-icon">{item.icon}</span>
+                                            <span className="menu-item-text">{item.label}</span>
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         )}
