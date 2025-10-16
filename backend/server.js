@@ -6,6 +6,7 @@ import userRoutes from './routes/user.js';
 import weatherRoutes from './routes/weather.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import emailRoutes from './src/routes/email.js'; // FIXED: Correct path
+import adminRoutes from './routes/admin.js';
 
 // Load environment variables
 dotenv.config();
@@ -90,6 +91,11 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/email', emailRoutes); // FIXED: Changed from /api/protected/email to /api/email
+app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/weather', weatherRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/admin', adminRoutes); // ADDED: Admin routes
 
 // 404 handler
 app.use((req, res) => {

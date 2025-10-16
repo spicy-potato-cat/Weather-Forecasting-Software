@@ -153,7 +153,7 @@ function LoginPage() {
                 )}
 
                 <div className="login-footer">
-                    <a href="/forgot" className="login-link">Forgot password?</a>
+                    <Link to="/forgot-password" className="login-link">Forgot password?</Link>
                     <Link to="/signup" className="login-link">Create account</Link>
                 </div>
             </form>

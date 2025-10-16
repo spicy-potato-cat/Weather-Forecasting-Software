@@ -52,12 +52,11 @@ router.post('/register',
 
       const user = result.rows[0];
       
-      // Create hMail account in development (non-blocking, don't fail if it errors)
+      // Create hMail account in development (pass full name)
       if (process.env.NODE_ENV === 'development') {
-        // Run asynchronously without waiting
-        emailService.createHmailAccount(email, password)
+        emailService.createHmailAccount(email, password, name) // Pass name as third argument
           .then(() => {
-            console.log(`✅ hMail account created for: ${email}`);
+            console.log(`✅ hMail account created for: ${email} (${name})`);
           })
           .catch((hmailError) => {
             console.error(`⚠️ hMail account creation failed (non-critical):`, hmailError.message);
@@ -164,6 +163,185 @@ router.post('/login',
       });
     } catch (error) {
       next(error); // Pass to error handler
+    }
+  }
+);
+
+// POST /api/auth/logout
+router.post('/logout', (req, res) => {
+  console.log('Logout request received');
+  res.json({
+    success: true,
+    message: 'Logout successful'
+  });
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Invalid email format')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { email } = req.body;
+
+      // Check if user exists
+      const result = await query(
+        'SELECT id, email, name FROM users WHERE email = $1',
+        [email]
+      );
+
+      // Always return success to prevent email enumeration
+      if (result.rows.length === 0) {
+        console.log(`⚠️ Password reset attempted for non-existent email: ${email}`);
+        return res.json({
+          success: true,
+          message: 'If an account exists with this email, you will receive a password reset code.'
+        });
+      }
+
+      const user = result.rows[0];
+
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration (10 minutes from now)
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      // Store OTP in database
+      await query(
+        'UPDATE users SET password_reset_otp = $1, otp_expires_at = $2 WHERE id = $3',
+        [otp, expiresAt, user.id]
+      );
+
+      // Send OTP via email
+      try {
+        await emailService.sendPasswordResetOTP({
+          to: email,
+          otp,
+          userName: user.name
+        });
+
+        console.log(`✅ Password reset OTP sent to: ${email}`);
+
+        res.json({
+          success: true,
+          message: 'If an account exists with this email, you will receive a password reset code.'
+        });
+      } catch (emailError) {
+        console.error('❌ Failed to send password reset email:', emailError.message);
+        
+        // Clear OTP if email fails
+        await query(
+          'UPDATE users SET password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $1',
+          [user.id]
+        );
+
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send reset code. Please try again later.'
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/auth/reset-password
+router.post('/reset-password',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Invalid email format'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
+    body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { email, otp, newPassword } = req.body;
+
+      // Get user with OTP
+      const result = await query(
+        'SELECT id, email, name, password_reset_otp, otp_expires_at FROM users WHERE email = $1',
+        [email]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email or OTP'
+        });
+      }
+
+      const user = result.rows[0];
+
+      // Check if OTP exists
+      if (!user.password_reset_otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'No password reset request found. Please request a new code.'
+        });
+      }
+
+      // Check if OTP matches
+      if (user.password_reset_otp !== otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid OTP. Please check your email and try again.'
+        });
+      }
+
+      // Check if OTP expired
+      const now = new Date();
+      const expiresAt = new Date(user.otp_expires_at);
+      
+      if (now > expiresAt) {
+        // Clear expired OTP
+        await query(
+          'UPDATE users SET password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $1',
+          [user.id]
+        );
+
+        return res.status(400).json({
+          success: false,
+          message: 'OTP expired. Please request a new password reset code.'
+        });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password and clear OTP
+      await query(
+        'UPDATE users SET password = $1, password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $2',
+        [hashedPassword, user.id]
+      );
+
+      console.log(`✅ Password reset successful for: ${email}`);
+
+      res.json({
+        success: true,
+        message: 'Password reset successful! You can now login with your new password.'
+      });
+    } catch (error) {
+      next(error);
     }
   }
 );

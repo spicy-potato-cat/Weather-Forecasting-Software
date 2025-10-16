@@ -20,6 +20,8 @@ import HelpSupport from './pages/HelpSupport.jsx'
 import { usePreferences } from './hooks/usePreferences.js';
 import { formatTemperature, formatWindSpeed, formatPressure } from './lib/math.js';
 import AlertBanner from './components/AlertBanner/AlertBanner.jsx'
+import ForgotPassword from './ForgotPassword.jsx';
+import ResetPassword from './ResetPassword.jsx';
 
 // Attribute tab list
 const attributes = [
@@ -280,6 +282,14 @@ function App() {
 
   if (location.pathname === '/help') {
     return <HelpSupport />;
+  }
+
+  if (location.pathname === '/forgot-password') {
+    return <ForgotPassword />;
+  }
+
+  if (location.pathname === '/reset-password') {
+    return <ResetPassword />;
   }
 
   // Otherwise, render the normal layout
