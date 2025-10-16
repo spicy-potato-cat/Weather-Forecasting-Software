@@ -196,3 +196,22 @@
     }
 }
 
+.menu-section-header {
+  color: #2fe79f;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 1rem;
+  margin-top: 0.5rem;
+}
+
+.menu-item-admin {
+  background: rgba(47, 231, 159, 0.05);
+  border-left: 3px solid #2fe79f;
+}
+
+.menu-item-admin:hover {
+  background: rgba(47, 231, 159, 0.15);
+  border-left-color: #61ffd0;
+} 

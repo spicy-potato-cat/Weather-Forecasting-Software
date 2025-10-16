@@ -8,6 +8,8 @@ import { errorHandler } from './middleware/errorHandler.js';
 import emailRoutes from './src/routes/email.js'; // FIXED: Correct path
 import adminRoutes from './routes/admin.js';
 import analyticsRoutes from './routes/analytics.js';
+import ticketsRoutes from './routes/tickets.js';
+
 
 
 // Load environment variables
@@ -92,18 +94,23 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/weather', weatherRoutes);
-app.use('/api/email', emailRoutes); // FIXED: Changed from /api/protected/email to /api/email
+app.use('/api/email', emailRoutes); 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/email', emailRoutes);
-app.use('/api/admin', adminRoutes); // ADDED: Admin routes
+app.use('/api/admin', adminRoutes); 
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/email', emailRoutes);
-app.use('/api/analytics', analyticsRoutes); // ADDED
-
+app.use('/api/analytics', analyticsRoutes); 
+app.use('/api/auth', authRoutes);
+app.use('/api/user', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/tickets', ticketsRoutes);
 
 // 404 handler
 app.use((req, res) => {

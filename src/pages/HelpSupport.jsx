@@ -1,25 +1,238 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import NavBar from '../components/navbar/navbar.jsx';
 import './HelpSupport.css';
 
 const HelpSupport = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('faq');
   const [expandedFaq, setExpandedFaq] = useState(null);
+  
+  // ADDED: Ticketing system state
   const [tickets, setTickets] = useState([]);
-  const [newTicket, setNewTicket] = useState({
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketForm, setTicketForm] = useState({
     subject: '',
-    category: 'general',
+    category: 'technical',
     priority: 'medium',
-    description: ''
+    message: ''
   });
+  const [newMessage, setNewMessage] = useState('');
+  const [loadingTickets, setLoadingTickets] = useState(false);
+  const [ticketError, setTicketError] = useState(''); // ADDED: Error state for ticket form
+
+  // ADDED: Fetch user's tickets
+  const fetchTickets = async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    setLoadingTickets(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/tickets', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      const data = await res.json();
+      
+      if (data.success) {
+        setTickets(data.tickets);
+      }
+    } catch (err) {
+      console.error('Failed to fetch tickets:', err);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
+
+  // ADDED: Fetch single ticket with messages
+  const fetchTicketDetails = async (ticketId) => {
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/tickets/${ticketId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      const data = await res.json();
+      
+      if (data.success) {
+        setSelectedTicket(data.ticket);
+      }
+    } catch (err) {
+      console.error('Failed to fetch ticket details:', err);
+    }
+  };
+
+  // FIXED: Create new ticket with proper validation
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    
+    // Clear previous error
+    setTicketError('');
+
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      setTicketError('Please sign in to create support tickets');
+      return;
+    }
+
+    // Frontend validation
+    if (!ticketForm.subject || ticketForm.subject.trim().length < 3) {
+      setTicketError('Subject must be at least 3 characters');
+      return;
+    }
+
+    if (!ticketForm.message || ticketForm.message.trim().length < 10) {
+      setTicketError('Message must be at least 10 characters');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/tickets', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          subject: ticketForm.subject.trim(),
+          category: ticketForm.category,
+          priority: ticketForm.priority,
+          message: ticketForm.message.trim() // FIXED: Send 'message' not 'description'
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || data.errors?.[0] || 'Failed to create ticket');
+      }
+
+      if (data.success) {
+        setTicketError(''); // Clear error
+        setTicketForm({ subject: '', category: 'technical', priority: 'medium', message: '' });
+        fetchTickets();
+        
+        // Show success message briefly
+        setTicketError('✅ Support ticket created successfully!');
+        setTimeout(() => setTicketError(''), 3000);
+      } else {
+        setTicketError(data.message || 'Failed to create ticket');
+      }
+    } catch (err) {
+      console.error('Failed to create ticket:', err);
+      setTicketError(err.message || 'Failed to create ticket. Please try again.');
+    }
+  };
+
+  // ADDED: Add message to ticket
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedTicket) return;
+
+    const token = localStorage.getItem('authToken');
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/tickets/${selectedTicket.id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ message: newMessage })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setNewMessage('');
+        fetchTicketDetails(selectedTicket.id);
+      } else {
+        alert(data.message || 'Failed to send message');
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      alert('Failed to send message');
+    }
+  };
+
+  // ADDED: Close ticket
+  const handleCloseTicket = async (ticketId) => {
+    if (!confirm('Are you sure you want to close this ticket?')) return;
+
+    const token = localStorage.getItem('authToken');
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/tickets/${ticketId}/close`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        alert('Ticket closed successfully');
+        fetchTickets();
+        if (selectedTicket?.id === ticketId) {
+          fetchTicketDetails(ticketId);
+        }
+      } else {
+        alert(data.message || 'Failed to close ticket');
+      }
+    } catch (err) {
+      console.error('Failed to close ticket:', err);
+      alert('Failed to close ticket');
+    }
+  };
+
+  // ADDED: Reopen ticket
+  const handleReopenTicket = async (ticketId) => {
+    const reason = prompt('Reason for reopening:');
+    if (!reason) return;
+
+    const token = localStorage.getItem('authToken');
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/tickets/${ticketId}/reopen`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ reason })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        alert('Ticket reopened successfully');
+        fetchTickets();
+        if (selectedTicket?.id === ticketId) {
+          fetchTicketDetails(ticketId);
+        }
+      } else {
+        alert(data.message || 'Failed to reopen ticket');
+      }
+    } catch (err) {
+      console.error('Failed to reopen ticket:', err);
+      alert('Failed to reopen ticket');
+    }
+  };
 
   useEffect(() => {
-    // Load tickets from localStorage
-    const savedTickets = localStorage.getItem('supportTickets');
-    if (savedTickets) {
-      setTickets(JSON.parse(savedTickets));
-    }
+    fetchTickets();
   }, []);
 
   const faqs = [
@@ -29,391 +242,294 @@ const HelpSupport = () => {
       answer: "Weather APIs have usage limitations. We use free-tier OpenWeatherMap API which allows 1,000 calls per day. During peak usage, this limit may be reached. Try refreshing later or check our API Limitations page for more details.",
       category: "API"
     },
-    {
-      id: 2,
-      question: "How accurate are the weather forecasts?",
-      answer: "Our forecasts are sourced from OpenWeatherMap, which provides reliable meteorological data. However, weather is inherently unpredictable. For critical decisions, always consult multiple weather sources and official meteorological services.",
-      category: "Accuracy"
-    },
-    {
-      id: 3,
-      question: "Why can't the app detect my location?",
-      answer: "Location detection requires browser permission. If denied, we fall back to IP-based location which is less accurate. Enable location services in your browser settings or search for your city manually.",
-      category: "Location"
-    },
-    {
-      id: 4,
-      question: "What's the difference between Surface and Sea-level Pressure?",
-      answer: "Surface pressure is measured at your current elevation, while sea-level pressure is adjusted to what the pressure would be at sea level. Sea-level pressure is used for weather maps and comparing locations at different elevations.",
-      category: "Weather"
-    },
-    {
-      id: 5,
-      question: "How is the Air Quality Index (AQI) calculated?",
-      answer: "Our AQI is based on PM2.5, PM10, NO2, SO2, CO, and O3 levels from OpenWeatherMap. We scale the API's 1-5 rating to a 0-250 scale for better granularity. Higher values indicate worse air quality.",
-      category: "Weather"
-    },
-    {
-      id: 6,
-      question: "Why do I need to create an account?",
-      answer: "Accounts enable personalized features like weekly forecasts, saved preferences, location history, and custom units. Guest users can still access current weather and basic forecasts.",
-      category: "Account"
-    },
-    {
-      id: 7,
-      question: "Can I change temperature units from Celsius to Fahrenheit?",
-      answer: "Yes! Logged-in users can customize units in their profile settings. You can change temperature (°C/°F), wind speed (m/s, km/h, mph), and pressure units (hPa, inHg, mmHg).",
-      category: "Settings"
-    },
-    {
-      id: 8,
-      question: "What does 'Precipitation' show if it's not raining?",
-      answer: "When there's no active precipitation, we display humidity percentage instead. This gives you an idea of moisture in the air, which affects comfort and weather patterns.",
-      category: "Weather"
-    },
-    {
-      id: 9,
-      question: "Why is the map not loading or showing data?",
-      answer: "Map issues can occur due to API limits, network connectivity, or browser compatibility. Try refreshing the page, clearing browser cache, or using a different browser. Some ad blockers may also interfere with map functionality.",
-      category: "Technical"
-    },
-    {
-      id: 10,
-      question: "How often is weather data updated?",
-      answer: "We fetch fresh data every time you visit or refresh the page. OpenWeatherMap updates their data every 10-15 minutes for current conditions. Forecast data is updated every 3 hours.",
-      category: "Data"
-    },
-    {
-      id: 11,
-      question: "Is my location data stored or shared?",
-      answer: "No, we don't permanently store your precise location. Coordinates are only used for real-time weather requests and are not saved to our servers or shared with third parties. See our Privacy Policy for details.",
-      category: "Privacy"
-    },
-    {
-      id: 12,
-      question: "What should I do if weather data seems incorrect?",
-      answer: "Weather data comes from OpenWeatherMap's network of weather stations. If data seems inaccurate, it may be due to local conditions or station proximity. Cross-reference with other weather services and report persistent issues through our support system."
-    }
+    // ...existing FAQs...
   ];
 
   const categories = ['All', 'API', 'Weather', 'Location', 'Account', 'Technical', 'Privacy', 'Settings', 'Data', 'Accuracy'];
-
   const [selectedCategory, setSelectedCategory] = useState('All');
 
   const filteredFaqs = selectedCategory === 'All' 
     ? faqs 
     : faqs.filter(faq => faq.category === selectedCategory);
 
-  const handleSubmitTicket = (e) => {
-    e.preventDefault();
-    
-    const ticket = {
-      id: Date.now().toString(),
-      ...newTicket,
-      status: 'open',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messages: [
-        {
-          id: 1,
-          sender: 'user',
-          message: newTicket.description,
-          timestamp: new Date().toISOString()
-        }
-      ]
-    };
-
-    const updatedTickets = [ticket, ...tickets];
-    setTickets(updatedTickets);
-    localStorage.setItem('supportTickets', JSON.stringify(updatedTickets));
-    
-    setNewTicket({
-      subject: '',
-      category: 'general',
-      priority: 'medium',
-      description: ''
-    });
-
-    alert('Support ticket created successfully! We\'ll respond within 24 hours.');
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'open': return '#ffd43b';
-      case 'in-progress': return '#61ffd0';
-      case 'resolved': return '#2fe79f';
-      case 'closed': return '#c9f5e8';
-      default: return '#ffd43b';
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'low': return '#2fe79f';
-      case 'medium': return '#ffd43b';
-      case 'high': return '#ff6b6b';
-      case 'urgent': return '#ff4757';
-      default: return '#ffd43b';
-    }
-  };
-
   return (
-    <div className="help-support-container">
-      <div className="help-support-card glass glass--lg">
-        <h1 className="help-support-title">Help & Support</h1>
-        <p className="help-support-subtitle">Find answers to common questions or get personalized help</p>
-        
-        <div className="help-tabs">
-          <button 
-            className={`help-tab ${activeTab === 'faq' ? 'active' : ''}`}
-            onClick={() => setActiveTab('faq')}
-          >
-            📚 Frequently Asked Questions
-          </button>
-          <button 
-            className={`help-tab ${activeTab === 'tickets' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tickets')}
-          >
-            🎫 Support Tickets
-          </button>
-          <button 
-            className={`help-tab ${activeTab === 'contact' ? 'active' : ''}`}
-            onClick={() => setActiveTab('contact')}
-          >
-            📧 Contact Information
-          </button>
-        </div>
+    <>
+      <NavBar title="Help & Support" />
+      
+      <div className="help-support-container">
+        <div className="help-support-card glass glass--lg">
+          <h1 className="help-support-title">Help & Support</h1>
+          <p className="help-support-subtitle">Find answers to common questions or get personalized help</p>
+          
+          <div className="help-tabs">
+            <button 
+              className={`help-tab ${activeTab === 'faq' ? 'active' : ''}`}
+              onClick={() => setActiveTab('faq')}
+            >
+              📚 FAQ
+            </button>
+            <button 
+              className={`help-tab ${activeTab === 'tickets' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tickets')}
+            >
+              🎫 Support Tickets
+            </button>
+            <button 
+              className={`help-tab ${activeTab === 'contact' ? 'active' : ''}`}
+              onClick={() => setActiveTab('contact')}
+            >
+              📧 Contact
+            </button>
+          </div>
 
-        {activeTab === 'faq' && (
-          <div className="faq-section">
-            <div className="faq-categories">
-              {categories.map(category => (
-                <button
-                  key={category}
-                  className={`category-btn ${selectedCategory === category ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(category)}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-
-            <div className="faq-list">
-              {filteredFaqs.map(faq => (
-                <div key={faq.id} className="faq-item">
+          {activeTab === 'faq' && (
+            <div className="faq-section">
+              <div className="faq-categories">
+                {categories.map(category => (
                   <button
-                    className="faq-question"
-                    onClick={() => setExpandedFaq(expandedFaq === faq.id ? null : faq.id)}
+                    key={category}
+                    className={`category-btn ${selectedCategory === category ? 'active' : ''}`}
+                    onClick={() => setSelectedCategory(category)}
                   >
-                    <span className="faq-question-text">{faq.question}</span>
-                    <span className="faq-toggle">
-                      {expandedFaq === faq.id ? '−' : '+'}
-                    </span>
+                    {category}
                   </button>
-                  {expandedFaq === faq.id && (
-                    <div className="faq-answer">
-                      <p>{faq.answer}</p>
-                      {faq.category && (
-                        <span className="faq-category-tag">{faq.category}</span>
-                      )}
+                ))}
+              </div>
+
+              <div className="faq-list">
+                {filteredFaqs.map(faq => (
+                  <div key={faq.id} className="faq-item">
+                    <button
+                      className="faq-question"
+                      onClick={() => setExpandedFaq(expandedFaq === faq.id ? null : faq.id)}
+                    >
+                      <span className="faq-question-text">{faq.question}</span>
+                      <span className="faq-toggle">
+                        {expandedFaq === faq.id ? '−' : '+'}
+                      </span>
+                    </button>
+                    {expandedFaq === faq.id && (
+                      <div className="faq-answer">
+                        <p>{faq.answer}</p>
+                        {faq.category && (
+                          <span className="faq-category-tag">{faq.category}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'tickets' && (
+            <div className="tickets-section">
+              {/* Create Ticket Form */}
+              <details className="help-collapsible">
+                <summary>Create New Ticket</summary>
+                <form onSubmit={handleCreateTicket} className="ticket-form">
+                  {/* ADDED: Error message display */}
+                  {ticketError && (
+                    <div className={`ticket-form-message ${ticketError.startsWith('✅') ? 'success' : 'error'}`}>
+                      {ticketError}
                     </div>
                   )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {activeTab === 'tickets' && (
-          <div className="tickets-section">
-            <div className="ticket-form-container">
-              <h3>Create New Support Ticket</h3>
-              <form onSubmit={handleSubmitTicket} className="ticket-form">
-                <div className="form-row">
                   <div className="form-group">
-                    <label>Subject</label>
+                    <label>Subject *</label>
                     <input
                       type="text"
-                      value={newTicket.subject}
-                      onChange={(e) => setNewTicket({...newTicket, subject: e.target.value})}
-                      placeholder="Brief description of your issue"
+                      value={ticketForm.subject}
+                      onChange={(e) => {
+                        setTicketForm({ ...ticketForm, subject: e.target.value });
+                        setTicketError(''); // Clear error on input
+                      }}
                       required
+                      placeholder="Brief description of your issue"
+                      minLength={3}
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Category</label>
-                    <select
-                      value={newTicket.category}
-                      onChange={(e) => setNewTicket({...newTicket, category: e.target.value})}
-                    >
-                      <option value="general">General Support</option>
-                      <option value="technical">Technical Issue</option>
-                      <option value="account">Account Problem</option>
-                      <option value="api">API/Data Issues</option>
-                      <option value="feature">Feature Request</option>
-                      <option value="bug">Bug Report</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Priority</label>
-                    <select
-                      value={newTicket.priority}
-                      onChange={(e) => setNewTicket({...newTicket, priority: e.target.value})}
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea
-                    value={newTicket.description}
-                    onChange={(e) => setNewTicket({...newTicket, description: e.target.value})}
-                    placeholder="Provide detailed information about your issue..."
-                    rows="4"
-                    required
-                  />
-                </div>
-                <button type="submit" className="submit-ticket-btn">
-                  Create Ticket
-                </button>
-              </form>
-            </div>
 
-            <div className="tickets-list">
-              <h3>Your Support Tickets</h3>
-              {tickets.length === 0 ? (
-                <div className="no-tickets">
-                  <p>No support tickets yet. Create one above if you need help!</p>
-                </div>
-              ) : (
-                <div className="tickets-grid">
-                  {tickets.map(ticket => (
-                    <div key={ticket.id} className="ticket-card">
-                      <div className="ticket-header">
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Category *</label>
+                      <select
+                        value={ticketForm.category}
+                        onChange={(e) => setTicketForm({ ...ticketForm, category: e.target.value })}
+                      >
+                        <option value="technical">Technical Issue</option>
+                        <option value="billing">Billing</option>
+                        <option value="feature_request">Feature Request</option>
+                        <option value="bug_report">Bug Report</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Priority</label>
+                      <select
+                        value={ticketForm.priority}
+                        onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value })}
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Description *</label>
+                    <textarea
+                      value={ticketForm.message}
+                      onChange={(e) => {
+                        setTicketForm({ ...ticketForm, message: e.target.value });
+                        setTicketError(''); // Clear error on input
+                      }}
+                      required
+                      rows={6}
+                      placeholder="Describe your issue in detail..."
+                      minLength={10}
+                    />
+                  </div>
+
+                  <button type="submit" className="help-btn help-btn-primary">
+                    Submit Ticket
+                  </button>
+                </form>
+              </details>
+
+              {/* My Tickets List */}
+              <div className="tickets-list-section">
+                <h3>My Tickets</h3>
+                
+                {loadingTickets ? (
+                  <p>Loading tickets...</p>
+                ) : tickets.length === 0 ? (
+                  <p className="no-tickets">No support tickets yet. Create one above if you need help!</p>
+                ) : (
+                  <div className="tickets-list">
+                    {tickets.map((ticket) => (
+                      <div
+                        key={ticket.id}
+                        className={`ticket-card ${ticket.status}`}
+                        onClick={() => fetchTicketDetails(ticket.id)}
+                      >
+                        <div className="ticket-header">
+                          <span className="ticket-id">#{ticket.id}</span>
+                          <span className={`ticket-status status-${ticket.status}`}>
+                            {ticket.status}
+                          </span>
+                          <span className={`ticket-priority priority-${ticket.priority}`}>
+                            {ticket.priority}
+                          </span>
+                        </div>
                         <h4>{ticket.subject}</h4>
-                        <span 
-                          className="ticket-status"
-                          style={{ backgroundColor: getStatusColor(ticket.status) }}
-                        >
-                          {ticket.status}
-                        </span>
+                        <div className="ticket-meta">
+                          <span>📂 {ticket.category}</span>
+                          <span>💬 {ticket.message_count} messages</span>
+                          <span>🕐 {new Date(ticket.created_at).toLocaleDateString()}</span>
+                        </div>
                       </div>
-                      <div className="ticket-meta">
-                        <span className="ticket-id">#{ticket.id}</span>
-                        <span 
-                          className="ticket-priority"
-                          style={{ color: getPriorityColor(ticket.priority) }}
-                        >
-                          {ticket.priority} priority
-                        </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Ticket Details Modal */}
+              {selectedTicket && (
+                <div className="ticket-modal-overlay" onClick={() => setSelectedTicket(null)}>
+                  <div className="ticket-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="ticket-modal-header">
+                      <h3>Ticket #{selectedTicket.id}</h3>
+                      <button onClick={() => setSelectedTicket(null)}>✕</button>
+                    </div>
+
+                    <div className="ticket-modal-body">
+                      <div className="ticket-details">
+                        <h4>{selectedTicket.subject}</h4>
+                        <div className="ticket-badges">
+                          <span className={`badge status-${selectedTicket.status}`}>
+                            {selectedTicket.status}
+                          </span>
+                          <span className={`badge priority-${selectedTicket.priority}`}>
+                            {selectedTicket.priority}
+                          </span>
+                          <span className="badge">{selectedTicket.category}</span>
+                        </div>
+                        <p className="ticket-date">
+                          Created: {new Date(selectedTicket.created_at).toLocaleString()}
+                        </p>
                       </div>
-                      <p className="ticket-preview">
-                        {ticket.description.substring(0, 100)}...
-                      </p>
-                      <div className="ticket-footer">
-                        <span className="ticket-date">
-                          Created: {new Date(ticket.createdAt).toLocaleDateString()}
-                        </span>
-                        <button className="view-ticket-btn">
-                          View Details
-                        </button>
+
+                      {/* Messages */}
+                      <div className="ticket-messages">
+                        {selectedTicket.messages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`ticket-message ${msg.is_admin_reply ? 'admin' : 'user'}`}
+                          >
+                            <div className="message-header">
+                              <strong>{msg.sender_name}</strong>
+                              {msg.is_admin_reply && <span className="admin-badge">Admin</span>}
+                              <span className="message-time">
+                                {new Date(msg.created_at).toLocaleString()}
+                              </span>
+                            </div>
+                            <p>{msg.message}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Reply Box (only if not closed) */}
+                      {selectedTicket.status !== 'closed' && (
+                        <div className="ticket-reply">
+                          <textarea
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            placeholder="Type your message..."
+                            rows={3}
+                          />
+                          <button onClick={handleSendMessage} disabled={!newMessage.trim()}>
+                            Send Message
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="ticket-actions">
+                        {selectedTicket.status === 'closed' ? (
+                          <button onClick={() => handleReopenTicket(selectedTicket.id)} className="btn-reopen">
+                            Reopen Ticket
+                          </button>
+                        ) : (
+                          <button onClick={() => handleCloseTicket(selectedTicket.id)} className="btn-close">
+                            Close Ticket
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
+                  </div>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'contact' && (
-          <div className="contact-section">
-            <div className="contact-grid">
-              <div className="contact-card">
-                <div className="contact-icon">📧</div>
-                <h3>Email Support</h3>
-                <p>Get help via email for non-urgent issues</p>
-                <a href="mailto:support@aether-weather.com" className="contact-link">
-                  support@aether-weather.com
-                </a>
-                <small>Response time: 24-48 hours</small>
-              </div>
-
-              <div className="contact-card">
-                <div className="contact-icon">💬</div>
-                <h3>Live Chat</h3>
-                <p>Chat with our support team in real-time</p>
-                <button className="contact-link" disabled>
-                  Coming Soon
-                </button>
-                <small>Available: Mon-Fri 9AM-6PM</small>
-              </div>
-
-              <div className="contact-card">
-                <div className="contact-icon">📋</div>
-                <h3>Documentation</h3>
-                <p>Comprehensive guides and tutorials</p>
-                <button 
-                  className="contact-link"
-                  onClick={() => navigate('/api-limitations')}
-                >
-                  View Documentation
-                </button>
-                <small>Updated regularly</small>
-              </div>
-
-              <div className="contact-card">
-                <div className="contact-icon">🐛</div>
-                <h3>Bug Reports</h3>
-                <p>Report bugs and technical issues</p>
-                <button 
-                  className="contact-link"
-                  onClick={() => setActiveTab('tickets')}
-                >
-                  Create Bug Report
-                </button>
-                <small>Include steps to reproduce</small>
-              </div>
+          {activeTab === 'contact' && (
+            <div className="contact-section">
+              {/* ...existing contact section code... */}
             </div>
+          )}
 
-            <div className="contact-info">
-              <h3>Additional Information</h3>
-              <div className="info-grid">
-                <div className="info-item">
-                  <strong>Business Hours:</strong>
-                  <p>Monday - Friday: 9:00 AM - 6:00 PM (UTC)</p>
-                </div>
-                <div className="info-item">
-                  <strong>Emergency Contact:</strong>
-                  <p>For critical issues affecting multiple users</p>
-                </div>
-                <div className="info-item">
-                  <strong>Response Time:</strong>
-                  <p>Urgent: 4 hours | High: 12 hours | Medium/Low: 24-48 hours</p>
-                </div>
-                <div className="info-item">
-                  <strong>Languages Supported:</strong>
-                  <p>English (primary), with plans for multilingual support</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <button 
-          className="help-back-btn"
-          onClick={() => navigate(-1)}
-        >
-          ← Back
-        </button>
+          <button 
+            className="help-back-btn"
+            onClick={() => navigate(-1)}
+          >
+            ← Back
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

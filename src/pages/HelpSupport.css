@@ -375,6 +375,27 @@
   background: rgba(47, 231, 159, 0.3);
 }
 
+.ticket-form-message {
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.ticket-form-message.error {
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+}
+
+.ticket-form-message.success {
+  background: rgba(47, 231, 159, 0.1);
+  border: 1px solid rgba(47, 231, 159, 0.3);
+  color: #2fe79f;
+}
+
+
 /* Contact Section */
 .contact-section {
   display: flex;

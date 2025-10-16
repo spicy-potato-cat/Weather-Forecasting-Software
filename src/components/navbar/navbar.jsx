@@ -12,21 +12,31 @@ export default function NavBar({ title = "Aether" }) {
     const [query, setQuery] = useState("");
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
     const menuRef = useRef(null);
     const navigate = useNavigate();
 
     // Check if user is logged in (check localStorage, sessionStorage, or auth token)
     useEffect(() => {
-        // Check for auth token or user session
         const checkAuthStatus = () => {
             const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
             const user = localStorage.getItem('user');
             setIsLoggedIn(!!(token || user));
+            
+            // ADDED: Check admin status
+            if (user) {
+                try {
+                    const userData = JSON.parse(user);
+                    setIsAdmin(!!userData.is_admin);
+                } catch (err) {
+                    setIsAdmin(false);
+                }
+            } else {
+                setIsAdmin(false);
+            }
         };
         
         checkAuthStatus();
-        
-        // Listen for auth changes (e.g., from login page)
         window.addEventListener('storage', checkAuthStatus);
         return () => window.removeEventListener('storage', checkAuthStatus);
     }, []);
@@ -126,6 +136,12 @@ export default function NavBar({ title = "Aether" }) {
         { icon: '❓', label: 'Help & Support', path: '/help' }
     ];
 
+    // ADDED: Admin menu items
+    const adminMenuItems = [
+        { icon: '🎫', label: 'Support Tickets', path: '/admin/tickets' }
+    ];
+
+
     return (
         <div>
             <>
@@ -222,6 +238,25 @@ export default function NavBar({ title = "Aether" }) {
                                     ))}
                                 </div>
                             </div>
+                        )}
+                        {isAdmin && (
+                            <>
+                                <div className="menu-divider"></div>
+                                <div className="menu-section-header">Admin Tools</div>
+                                {adminMenuItems.map((item) => (
+                                    <button 
+                                        key={item.label}
+                                        className="menu-item menu-item-admin"
+                                        onClick={() => {
+                                            setIsMenuOpen(false);
+                                            navigate(item.path);
+                                        }}
+                                    >
+                                        <span className="menu-item-icon">{item.icon}</span>
+                                        <span className="menu-item-text">{item.label}</span>
+                                    </button>
+                                ))}
+                            </>
                         )}
                     </div>
                 </div>
