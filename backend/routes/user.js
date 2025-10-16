@@ -1,359 +1,808 @@
 import express from 'express';
+import { body, validationResult } from 'express-validator';
+import bcrypt from 'bcrypt';
 import { authenticate } from '../middleware/auth.js';
 import { query } from '../config/database.js';
+import emailService from '../src/services/emailService.js';
 
 const router = express.Router();
 
-// GET /api/user/profile - Get user profile (protected)
-router.get('/profile', authenticate, async (req, res, next) => {
-  try {
-    const result = await query(
-      'SELECT id, email, name, created_at FROM users WHERE id = $1',
-      [req.user.id]
-    );
+// ========================================
+// SAVED LOCATIONS ROUTES
+// ========================================
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+// GET /api/user/locations - Get user's saved locations
+router.get('/locations',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
 
-    res.json({
-      success: true,
-      user: result.rows[0]
-    });
-  } catch (error) {
-    next(error);
-  }
-});
+      const result = await query(
+        `SELECT id, location_name, latitude, longitude, is_primary, created_at 
+         FROM saved_locations 
+         WHERE user_id = $1 
+         ORDER BY is_primary DESC, created_at DESC`,
+        [userId]
+      );
 
-// PUT /api/user/profile - Update user profile (protected)
-router.put('/profile', authenticate, (req, res) => {
-  // TODO: Implement update profile logic
-  res.json({ success: true, message: 'Update profile endpoint (to be implemented)' });
-});
-
-// GET /api/user/preferences - Get user preferences
-router.get('/preferences', authenticate, async (req, res, next) => {
-  try {
-    const result = await query(
-      `SELECT 
-        preferred_location,
-        temperature_unit,
-        wind_speed_unit,
-        pressure_unit,
-        precipitation_unit,
-        time_format,
-        theme,
-        notifications_enabled,
-        created_at,
-        updated_at
-       FROM user_preferences 
-       WHERE user_id = $1`,
-      [req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      // Return default preferences if none exist
-      return res.json({
+      res.json({
         success: true,
-        preferences: {
-          preferred_location: '',
-          temperature_unit: 'celsius',
-          wind_speed_unit: 'kmh',
-          pressure_unit: 'hpa',
-          precipitation_unit: 'mm',
-          time_format: '24h',
-          theme: 'dark',
-          notifications_enabled: true,
+        locations: result.rows
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/user/locations - Add new saved location
+router.post('/locations',
+  authenticate,
+  [
+    body('location_name').trim().notEmpty().withMessage('Location name is required'),
+    body('latitude').isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    body('longitude').isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+    body('is_primary').optional().isBoolean().withMessage('is_primary must be boolean')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const userId = req.user.id;
+      const { location_name, latitude, longitude, is_primary = false } = req.body;
+
+      // If setting as primary, unset other primary locations
+      if (is_primary) {
+        await query(
+          'UPDATE saved_locations SET is_primary = FALSE WHERE user_id = $1',
+          [userId]
+        );
+      }
+
+      const result = await query(
+        `INSERT INTO saved_locations (user_id, location_name, latitude, longitude, is_primary)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id, location_name, latitude, longitude, is_primary, created_at`,
+        [userId, location_name, latitude, longitude, is_primary]
+      );
+
+      console.log(`✅ Location saved: ${location_name} for user ${req.user.email}`);
+
+      res.status(201).json({
+        success: true,
+        message: 'Location saved successfully',
+        location: result.rows[0]
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /api/user/locations/:locationId - Delete saved location
+router.delete('/locations/:locationId',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
+      const { locationId } = req.params;
+
+      // Verify location belongs to user
+      const checkResult = await query(
+        'SELECT id FROM saved_locations WHERE id = $1 AND user_id = $2',
+        [locationId, userId]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Location not found'
+        });
+      }
+
+      await query(
+        'DELETE FROM saved_locations WHERE id = $1 AND user_id = $2',
+        [locationId, userId]
+      );
+
+      console.log(`✅ Location deleted: ID ${locationId} for user ${req.user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Location deleted successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/user/locations/:locationId/primary - Set location as primary
+router.put('/locations/:locationId/primary',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
+      const { locationId } = req.params;
+
+      // Verify location belongs to user
+      const checkResult = await query(
+        'SELECT id FROM saved_locations WHERE id = $1 AND user_id = $2',
+        [locationId, userId]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Location not found'
+        });
+      }
+
+      // Unset other primary locations
+      await query(
+        'UPDATE saved_locations SET is_primary = FALSE WHERE user_id = $1',
+        [userId]
+      );
+
+      // Set this location as primary
+      const result = await query(
+        `UPDATE saved_locations SET is_primary = TRUE WHERE id = $1 AND user_id = $2
+         RETURNING id, location_name, latitude, longitude, is_primary, created_at`,
+        [locationId, userId]
+      );
+
+      console.log(`✅ Primary location set: ID ${locationId} for user ${req.user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Primary location updated',
+        location: result.rows[0]
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  } 
+);
+
+// ========================================
+// PASSWORD CHANGE ROUTES
+// ========================================
+
+// POST /api/user/change-password (with current password)
+router.post('/change-password',
+  authenticate,
+  [
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user.id;
+
+      // Get user from database
+      const userResult = await query(
+        'SELECT id, email, password FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      // Verify current password
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({
+          success: false,
+          message: 'Current password is incorrect'
+        });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password in PostgreSQL
+      await query(
+        'UPDATE users SET password = $1 WHERE id = $2',
+        [hashedPassword, userId]
+      );
+
+      // Update hMail password
+      if (process.env.NODE_ENV === 'development') {
+        const hmailResult = await emailService.updateHmailPassword(user.email, newPassword);
+        if (hmailResult.success) {
+          console.log(`✅ hMail password updated for: ${user.email}`);
+        } else {
+          console.warn(`⚠️ hMail password update failed: ${hmailResult.message}`);
+        }
+      }
+
+      console.log(`✅ Password changed for user: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/user/send-password-reset-otp (send OTP for password change)
+router.post('/send-password-reset-otp',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
+
+      // Get user email
+      const userResult = await query(
+        'SELECT id, email, name FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration (5 minutes from now)
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+      // Store OTP in database
+      await query(
+        'UPDATE users SET password_reset_otp = $1, otp_expires_at = $2 WHERE id = $3',
+        [otp, expiresAt, userId]
+      );
+
+      // Send OTP via email
+      try {
+        await emailService.sendPasswordResetOTP({
+          to: user.email,
+          otp,
+          userName: user.name
+        });
+
+        console.log(`✅ Password reset OTP sent to: ${user.email}`);
+
+        res.json({
+          success: true,
+          message: 'Verification code sent to your email'
+        });
+      } catch (emailError) {
+        console.error('❌ Failed to send OTP email:', emailError.message);
+        
+        // Clear OTP if email fails
+        await query(
+          'UPDATE users SET password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $1',
+          [userId]
+        );
+
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send verification code. Please try again later.'
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/user/reset-password-with-otp (change password with OTP)
+router.post('/reset-password-with-otp',
+  authenticate,
+  [
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
+    body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { otp, newPassword } = req.body;
+      const userId = req.user.id;
+
+      // Get user with OTP
+      const result = await query(
+        'SELECT id, email, password_reset_otp, otp_expires_at FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      const user = result.rows[0];
+
+      // Check if OTP exists
+      if (!user.password_reset_otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'No verification code found. Please request a new code.'
+        });
+      }
+
+      // Check if OTP matches
+      if (user.password_reset_otp !== otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid verification code'
+        });
+      }
+
+      // Check if OTP expired
+      const now = new Date();
+      const expiresAt = new Date(user.otp_expires_at);
+      
+      if (now > expiresAt) {
+        await query(
+          'UPDATE users SET password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $1',
+          [userId]
+        );
+
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code expired. Please request a new code.'
+        });
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password and clear OTP
+      await query(
+        'UPDATE users SET password = $1, password_reset_otp = NULL, otp_expires_at = NULL WHERE id = $2',
+        [hashedPassword, userId]
+      );
+
+      // Update hMail password
+      if (process.env.NODE_ENV === 'development') {
+        const hmailResult = await emailService.updateHmailPassword(user.email, newPassword);
+        if (hmailResult.success) {
+          console.log(`✅ hMail password updated for: ${user.email}`);
+        }
+      }
+
+      console.log(`✅ Password reset with OTP for: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ========================================
+// EMAIL CHANGE ROUTES
+// ========================================
+
+// POST /api/user/send-email-change-otp
+router.post('/send-email-change-otp',
+  authenticate,
+  [
+    body('newEmail').isEmail().normalizeEmail().withMessage('Invalid email format')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { newEmail } = req.body;
+      const userId = req.user.id;
+
+      // Check if email already exists
+      const emailCheck = await query(
+        'SELECT id FROM users WHERE email = $1',
+        [newEmail]
+      );
+
+      if (emailCheck.rows.length > 0) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email already in use'
+        });
+      }
+
+      // Generate 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Set expiration (5 minutes from now)
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+      // Delete any existing token for this user
+      await query(
+        'DELETE FROM email_change_tokens WHERE user_id = $1',
+        [userId]
+      );
+
+      // Store OTP in email_change_tokens table
+      await query(
+        'INSERT INTO email_change_tokens (user_id, new_email, token, expires_at) VALUES ($1, $2, $3, $4)',
+        [userId, newEmail, otp, expiresAt]
+      );
+
+      // Send OTP to NEW email
+      try {
+        await emailService.sendPasswordResetOTP({
+          to: newEmail,
+          otp,
+          userName: 'User'
+        });
+
+        console.log(`✅ Email change OTP sent to: ${newEmail}`);
+
+        res.json({
+          success: true,
+          message: `Verification code sent to ${newEmail}`
+        });
+      } catch (emailError) {
+        console.error('❌ Failed to send email change OTP:', emailError.message);
+        
+        // Clear token if email fails
+        await query(
+          'DELETE FROM email_change_tokens WHERE user_id = $1',
+          [userId]
+        );
+
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send verification code. Please try again later.'
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/user/change-email
+router.post('/change-email',
+  authenticate,
+  [
+    body('newEmail').isEmail().normalizeEmail().withMessage('Invalid email format'),
+    body('otp').isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
+
+      const { newEmail, otp } = req.body;
+      const userId = req.user.id;
+
+      // Get token from database
+      const tokenResult = await query(
+        'SELECT * FROM email_change_tokens WHERE user_id = $1',
+        [userId]
+      );
+
+      if (tokenResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No email change request found. Please request a new code.'
+        });
+      }
+
+      const tokenData = tokenResult.rows[0];
+
+      // Verify new email matches
+      if (tokenData.new_email !== newEmail) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email does not match the request'
+        });
+      }
+
+      // Verify OTP
+      if (tokenData.token !== otp) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid verification code'
+        });
+      }
+
+      // Check expiration
+      const now = new Date();
+      const expiresAt = new Date(tokenData.expires_at);
+      
+      if (now > expiresAt) {
+        await query('DELETE FROM email_change_tokens WHERE user_id = $1', [userId]);
+
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code expired. Please request a new code.'
+        });
+      }
+
+      // Get old email
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [userId]
+      );
+
+      const oldEmail = userResult.rows[0].email;
+
+      // Update email in PostgreSQL
+      await query(
+        'UPDATE users SET email = $1 WHERE id = $2',
+        [newEmail, userId]
+      );
+
+      // Delete token
+      await query('DELETE FROM email_change_tokens WHERE user_id = $1', [userId]);
+
+      // Note: hMail email addresses cannot be changed
+      // We need to delete old account and create new one
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`⚠️ Note: hMail email cannot be changed. Old account: ${oldEmail}, New account needs manual creation.`);
+        // Optionally: Delete old hMail account and create new one
+        // await emailService.deleteHmailAccount(oldEmail);
+        // await emailService.createHmailAccount(newEmail, 'temporaryPassword', userName);
+      }
+
+      console.log(`✅ Email changed from ${oldEmail} to ${newEmail}`);
+
+      res.json({
+        success: true,
+        message: 'Email changed successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ========================================
+// ACCOUNT SETTINGS ROUTES
+// ========================================
+
+// GET /api/user/settings
+router.get('/settings',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
+
+      const result = await query(
+        'SELECT email_notifications, weather_alerts, weekly_digest, data_sharing FROM user_settings WHERE user_id = $1',
+        [userId]
+      );
+
+      if (result.rows.length === 0) {
+        // Create default settings if not exists
+        await query(
+          'INSERT INTO user_settings (user_id, email_notifications, weather_alerts, weekly_digest, data_sharing) VALUES ($1, TRUE, TRUE, FALSE, FALSE)',
+          [userId]
+        );
+
+        return res.json({
+          success: true,
+          settings: {
+            emailNotifications: true,
+            weatherAlerts: true,
+            weeklyDigest: false,
+            dataSharing: false
+          }
+        });
+      }
+
+      const settings = result.rows[0];
+
+      res.json({
+        success: true,
+        settings: {
+          emailNotifications: settings.email_notifications,
+          weatherAlerts: settings.weather_alerts,
+          weeklyDigest: settings.weekly_digest,
+          dataSharing: settings.data_sharing
         }
       });
-    }
 
-    res.json({
-      success: true,
-      preferences: result.rows[0]
-    });
-  } catch (error) {
-    next(error);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-// PUT /api/user/preferences - Update user preferences
-router.put('/preferences', authenticate, async (req, res, next) => {
-  try {
-    const {
-      preferred_location,
-      temperature_unit,
-      wind_speed_unit,
-      pressure_unit,
-      precipitation_unit,
-      time_format,
-      theme,
-      notifications_enabled
-    } = req.body;
+// PUT /api/user/settings
+router.put('/settings',
+  authenticate,
+  [
+    body('emailNotifications').optional().isBoolean(),
+    body('weatherAlerts').optional().isBoolean(),
+    body('weeklyDigest').optional().isBoolean(),
+    body('dataSharing').optional().isBoolean()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array().map(err => err.msg)
+        });
+      }
 
-    // Validate temperature_unit
-    const validTempUnits = ['celsius', 'fahrenheit', 'kelvin'];
-    if (temperature_unit && !validTempUnits.includes(temperature_unit)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid temperature unit. Must be: celsius, fahrenheit, or kelvin'
+      const userId = req.user.id;
+      const { emailNotifications, weatherAlerts, weeklyDigest, dataSharing } = req.body;
+
+      // Update settings (upsert)
+      await query(
+        `INSERT INTO user_settings (user_id, email_notifications, weather_alerts, weekly_digest, data_sharing)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id) DO UPDATE
+         SET email_notifications = $2, weather_alerts = $3, weekly_digest = $4, data_sharing = $5, updated_at = NOW()`,
+        [userId, emailNotifications, weatherAlerts, weeklyDigest, dataSharing]
+      );
+
+      console.log(`✅ Settings updated for user: ${req.user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Settings updated successfully'
       });
+
+    } catch (error) {
+      next(error);
     }
-
-    // Validate wind_speed_unit
-    const validWindUnits = ['kmh', 'mph', 'ms', 'knots'];
-    if (wind_speed_unit && !validWindUnits.includes(wind_speed_unit)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid wind speed unit. Must be: kmh, mph, ms, or knots'
-      });
-    }
-
-    // Validate pressure_unit
-    const validPressureUnits = ['hpa', 'mb', 'inhg', 'mmhg'];
-    if (pressure_unit && !validPressureUnits.includes(pressure_unit)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid pressure unit. Must be: hpa, mb, inhg, or mmhg'
-      });
-    }
-
-    // Validate precipitation_unit
-    const validPrecipUnits = ['mm', 'inches'];
-    if (precipitation_unit && !validPrecipUnits.includes(precipitation_unit)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid precipitation unit. Must be: mm or inches'
-      });
-    }
-
-    // Validate time_format
-    const validTimeFormats = ['12h', '24h'];
-    if (time_format && !validTimeFormats.includes(time_format)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid time format. Must be: 12h or 24h'
-      });
-    }
-
-    // Validate theme
-    const validThemes = ['dark', 'light', 'auto'];
-    if (theme && !validThemes.includes(theme)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid theme. Must be: dark, light, or auto'
-      });
-    }
-
-    const result = await query(
-      `INSERT INTO user_preferences 
-        (user_id, preferred_location, temperature_unit, wind_speed_unit, 
-         pressure_unit, precipitation_unit, time_format, theme, notifications_enabled)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (user_id) 
-       DO UPDATE SET
-         preferred_location = COALESCE(EXCLUDED.preferred_location, user_preferences.preferred_location),
-         temperature_unit = COALESCE(EXCLUDED.temperature_unit, user_preferences.temperature_unit),
-         wind_speed_unit = COALESCE(EXCLUDED.wind_speed_unit, user_preferences.wind_speed_unit),
-         pressure_unit = COALESCE(EXCLUDED.pressure_unit, user_preferences.pressure_unit),
-         precipitation_unit = COALESCE(EXCLUDED.precipitation_unit, user_preferences.precipitation_unit),
-         time_format = COALESCE(EXCLUDED.time_format, user_preferences.time_format),
-         theme = COALESCE(EXCLUDED.theme, user_preferences.theme),
-         notifications_enabled = COALESCE(EXCLUDED.notifications_enabled, user_preferences.notifications_enabled),
-         updated_at = CURRENT_TIMESTAMP
-       RETURNING *`,
-      [
-        req.user.id, 
-        preferred_location || null, 
-        temperature_unit || 'celsius', 
-        wind_speed_unit || 'kmh',
-        pressure_unit || 'hpa',
-        precipitation_unit || 'mm',
-        time_format || '24h',
-        theme || 'dark',
-        notifications_enabled !== undefined ? notifications_enabled : true
-      ]
-    );
-
-    console.log(`✅ Preferences updated for user ${req.user.id}:`, {
-      temperature_unit,
-      wind_speed_unit,
-      pressure_unit,
-      precipitation_unit
-    });
-
-    res.json({
-      success: true,
-      message: 'Preferences updated successfully',
-      preferences: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating preferences:', error);
-    next(error);
   }
-});
+);
 
-// GET /api/user/locations - Get saved locations (ordered by rank)
-router.get('/locations', authenticate, async (req, res, next) => {
-  try {
-    const result = await query(
-      'SELECT * FROM saved_locations WHERE user_id = $1 ORDER BY rank ASC, created_at DESC',
-      [req.user.id]
-    );
+// DELETE /api/user/delete-account
+router.delete('/delete-account',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
 
-    res.json({
-      success: true,
-      locations: result.rows
-    });
-  } catch (error) {
-    next(error);
+      // Get user email before deletion
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      const userEmail = userResult.rows[0].email;
+
+      // Delete user (cascade will delete related records)
+      await query('DELETE FROM users WHERE id = $1', [userId]);
+
+      // Delete hMail account
+      if (process.env.NODE_ENV === 'development') {
+        const hmailResult = await emailService.deleteHmailAccount(userEmail);
+        if (hmailResult.success) {
+          console.log(`✅ hMail account deleted: ${userEmail}`);
+        }
+      }
+
+      console.log(`✅ User account deleted: ${userEmail}`);
+
+      res.json({
+        success: true,
+        message: 'Account deleted successfully'
+      });
+
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-// POST /api/user/locations - Add saved location
-router.post('/locations', authenticate, async (req, res, next) => {
-  try {
-    const { location_name, latitude, longitude } = req.body;
+// DELETE /api/user/delete-account
+router.delete('/delete-account',
+  authenticate,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
 
-    // Validate required fields
-    if (!location_name || !latitude || !longitude) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields: location_name, latitude, longitude'
+      // Get user email before deletion
+      const userResult = await query(
+        'SELECT email FROM users WHERE id = $1',
+        [userId]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      const userEmail = userResult.rows[0].email;
+
+      // Delete user (cascade will delete related records)
+      await query('DELETE FROM users WHERE id = $1', [userId]);
+
+      // Delete hMail account
+      if (process.env.NODE_ENV === 'development') {
+        const hmailResult = await emailService.deleteHmailAccount(userEmail);
+        if (hmailResult.success) {
+          console.log(`✅ hMail account deleted: ${userEmail}`);
+        }
+      }
+
+      console.log(`✅ User account deleted: ${userEmail}`);
+
+      res.json({
+        success: true,
+        message: 'Account deleted successfully'
       });
+
+    } catch (error) {
+      next(error);
     }
-
-    // Validate coordinates
-    const lat = parseFloat(latitude);
-    const lon = parseFloat(longitude);
-
-    if (isNaN(lat) || isNaN(lon)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid latitude or longitude'
-      });
-    }
-
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      return res.status(400).json({
-        success: false,
-        message: 'Latitude must be between -90 and 90, longitude between -180 and 180'
-      });
-    }
-
-    // Check for duplicate location
-    const duplicateCheck = await query(
-      'SELECT id FROM saved_locations WHERE user_id = $1 AND latitude = $2 AND longitude = $3',
-      [req.user.id, lat, lon]
-    );
-
-    if (duplicateCheck.rows.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'This location is already saved'
-      });
-    }
-
-    // Get the highest rank for this user
-    const rankResult = await query(
-      'SELECT COALESCE(MAX(rank), -1) as max_rank FROM saved_locations WHERE user_id = $1',
-      [req.user.id]
-    );
-
-    const newRank = rankResult.rows[0].max_rank + 1;
-
-    // Insert new location
-    const result = await query(
-      `INSERT INTO saved_locations (user_id, location_name, latitude, longitude, rank)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [req.user.id, location_name, lat, lon, newRank]
-    );
-
-    console.log(`✅ Location saved: ${location_name} (${lat}, ${lon}) - Rank: ${newRank}`);
-
-    res.status(201).json({
-      success: true,
-      message: 'Location saved successfully',
-      location: result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error saving location:', error);
-    next(error);
   }
-});
-
-// PUT /api/user/locations/reorder - Reorder locations
-router.put('/locations/reorder', authenticate, async (req, res, next) => {
-  try {
-    const { locationIds } = req.body;
-
-    if (!Array.isArray(locationIds) || locationIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'locationIds must be a non-empty array'
-      });
-    }
-
-    // Update ranks for all locations in a transaction-like manner
-    const updatePromises = locationIds.map((id, index) =>
-      query(
-        'UPDATE saved_locations SET rank = $1 WHERE id = $2 AND user_id = $3',
-        [index, id, req.user.id]
-      )
-    );
-
-    await Promise.all(updatePromises);
-
-    console.log(`✅ Reordered ${locationIds.length} locations for user ${req.user.id}`);
-
-    res.json({
-      success: true,
-      message: 'Locations reordered successfully'
-    });
-  } catch (error) {
-    console.error('Error reordering locations:', error);
-    next(error);
-  }
-});
-
-// DELETE /api/user/locations/:id - Remove saved location
-router.delete('/locations/:id', authenticate, async (req, res, next) => {
-  try {
-    const locationId = parseInt(req.params.id);
-
-    if (isNaN(locationId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid location ID'
-      });
-    }
-
-    const result = await query(
-      'DELETE FROM saved_locations WHERE id = $1 AND user_id = $2 RETURNING *',
-      [locationId, req.user.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'Location not found'
-      });
-    }
-
-    console.log(`✅ Location deleted: ${result.rows[0].location_name}`);
-
-    res.json({
-      success: true,
-      message: 'Location removed successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting location:', error);
-    next(error);
-  }
-});
+);
 
 export default router;
