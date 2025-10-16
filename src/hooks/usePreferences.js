@@ -14,23 +14,34 @@ const DEFAULT_PREFERENCES = {
 export function usePreferences() {
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchPreferences();
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      fetchPreferences(token);
+    } else {
+      setPreferences(DEFAULT_PREFERENCES);
+      setLoading(false);
+    }
+    
+    // Listen for logout to reset preferences
+    const handleLogout = () => {
+      console.log('🧹 Resetting user preferences to defaults');
+      setPreferences(DEFAULT_PREFERENCES);
+      setLoading(false);
+      setError(null);
+    };
+    
+    window.addEventListener('user-logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('user-logout', handleLogout);
+    };
   }, []);
 
-  const fetchPreferences = async () => {
+  const fetchPreferences = async (token) => {
     try {
-      const token = localStorage.getItem('authToken');
-      
-      // If no token, use defaults
-      if (!token) {
-        console.log('No auth token, using default preferences');
-        setPreferences(DEFAULT_PREFERENCES);
-        setLoading(false);
-        return;
-      }
-
       const response = await fetch('http://localhost:5000/api/user/preferences', {
         method: 'GET',
         headers: {

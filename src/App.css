@@ -278,3 +278,109 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Forecast login prompt styles - SIMPLIFIED */
+.forecast-login-prompt {
+  text-align: center;
+  padding: 2.5rem 2rem;
+  margin: 2rem 0;
+  background: linear-gradient(135deg, rgba(15, 107, 86, 0.3) 0%, rgba(13, 74, 64, 0.3) 100%);
+  border: 2px dashed rgba(47, 231, 159, 0.3);
+  border-radius: 12px;
+}
+
+.forecast-lock-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.8;
+}
+
+.forecast-login-prompt h3 {
+  color: var(--highlight);
+  font-size: 1.4rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.forecast-login-prompt p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.forecast-cta-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.forecast-cta-primary,
+.forecast-cta-secondary {
+  padding: 0.65rem 1.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+}
+
+.forecast-cta-primary {
+  background: var(--highlight);
+  color: #000;
+  border: 2px solid var(--highlight);
+}
+
+.forecast-cta-primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(47, 231, 159, 0.3);
+}
+
+.forecast-cta-secondary {
+  background: transparent;
+  color: var(--highlight);
+  border: 2px solid var(--highlight);
+}
+
+.forecast-cta-secondary:hover {
+  background: rgba(47, 231, 159, 0.1);
+  transform: translateY(-2px);
+}
+
+.forecast-protip {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: rgba(47, 231, 159, 0.1);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.protip-badge {
+  margin-right: 0.5rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .forecast-cta-buttons {
+    flex-direction: column;
+    width: 100%;
+    max-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .forecast-cta-primary,
+  .forecast-cta-secondary {
+    width: 100%;
+  }
+}

@@ -10,6 +10,7 @@ import React, { useEffect, useRef, useState } from 'react';
   import { clamp, lerp, kmhToMs, meteoToUV } from './lib/math.js';
   import { usePreferences } from './hooks/usePreferences.js';
   import { convertTemperature, getTemperatureSymbol } from './lib/math.js';
+  import { sharedWindCache, getGridCellKey as getCellKey, getGridCellBounds as getCellBounds } from './lib/windCache.js';
 
   // CONFIG: Optimized for OpenWeather API with grid-based wind fetching
   const CONFIG = {
@@ -29,8 +30,8 @@ import React, { useEffect, useRef, useState } from 'react';
     SHADOW_BLUR: 2,
 
     // Lifetime/respawn
-    LIFE_MIN_S: 4.0,
-    LIFE_MAX_S: 7.0,
+    LIFE_MIN_S: 15.0,
+    LIFE_MAX_S: 25.0,
     VIEW_RESPAWN_PADDING_DEG: 1.0,
 
     // OpenWeather API settings (WIND ONLY)
@@ -1040,19 +1041,30 @@ import React, { useEffect, useRef, useState } from 'react';
     };
 
     /**
-     * Sample wind velocity (unchanged - uses windGridCacheRef)
+     * Pre-fetch visible cells (full map version)
      */
-    const sampleWindUV = async (lon, lat) => {
-      const cellKey = getGridCellKey(lat, lon);
-      let cellData = windGridCacheRef.current.get(cellKey);
+    const prefetchVisibleCells = async () => {
+      const bounds = getViewLonLatBounds();
+      const visibleCells = getVisibleGridCells(bounds);
       
-      // If no cached data or expired, fetch it
-      if (!cellData || Date.now() - cellData.ts > CONFIG.WIND_CACHE_TTL_MS) {
-        // Fetch wind data for this cell on-demand
-        cellData = await fetchGridCellWind(cellKey);
-      }
+      const boundsMap = new Map();
+      visibleCells.forEach(key => {
+        boundsMap.set(key, getCellBounds(key, CONFIG.GRID_RESOLUTION_DEG));
+      });
+      
+      await sharedWindCache.batchFetchWind(visibleCells, boundsMap);
+    };
+
+    /**
+     * Sample wind using shared cache (synchronous)
+     */
+    const sampleWindUV = (lon, lat) => {
+      const cellKey = getCellKey(lat, lon, CONFIG.GRID_RESOLUTION_DEG);
+      const cellData = sharedWindCache.getWind(cellKey);
       
       if (!cellData) {
+        const bounds = getCellBounds(cellKey, CONFIG.GRID_RESOLUTION_DEG);
+        sharedWindCache.fetchWind(cellKey, bounds);
         return { u: 0, v: 0 };
       }
       
@@ -1063,94 +1075,9 @@ import React, { useEffect, useRef, useState } from 'react';
     };
 
     /**
-     * FIXED: Fetch wind data for a grid cell from OpenWeather
+     * Animation loop (now synchronous)
      */
-    const fetchGridCellWind = async (cellKey) => {
-      const now = Date.now();
-      
-      // Check cache first
-      const cached = windGridCacheRef.current.get(cellKey);
-      if (cached && (now - cached.ts < CONFIG.WIND_CACHE_TTL_MS)) {
-        return cached;
-      }
-      
-      // Prevent duplicate fetches
-      if (activeFetchesRef.current.has(cellKey)) {
-        return cached || null;
-      }
-      
-      // Rate limiting
-      const timeSinceLastFetch = now - lastApiFetchRef.current;
-      if (timeSinceLastFetch < CONFIG.MIN_FETCH_INTERVAL_MS) {
-        return cached || null;
-      }
-      
-      const bounds = getGridCellBounds(cellKey);
-      const { centerLat, centerLon } = bounds;
-      
-      // Validate coordinates
-      if (!isFinite(centerLat) || !isFinite(centerLon) ||
-          centerLat < -90 || centerLat > 90 ||
-          centerLon < -180 || centerLon > 180) {
-        return cached || null;
-      }
-      
-      activeFetchesRef.current.add(cellKey);
-      lastApiFetchRef.current = now;
-      
-      try {
-        const url = `https://api.openweathermap.org/data/2.5/weather?` +
-          `lat=${centerLat.toFixed(4)}&` +
-          `lon=${centerLon.toFixed(4)}&` +
-          `appid=${CONFIG.OPENWEATHER_API_KEY}&` +
-          `units=metric`;
-        
-        const res = await fetch(url);
-        
-        if (!res.ok) {
-          activeFetchesRef.current.delete(cellKey);
-          return cached || null;
-        }
-        
-        const data = await res.json();
-        
-        if (data?.wind) {
-          const speedMs = data.wind.speed || 0;
-          const direction = data.wind.deg || 0;
-          const { u, v } = meteoToUV(speedMs, direction);
-          
-          const cellData = {
-            cellKey,
-            ...bounds,
-            u,
-            v,
-            speed: speedMs,
-            direction,
-            ts: now,
-          };
-          
-          windGridCacheRef.current.set(cellKey, cellData);
-          activeFetchesRef.current.delete(cellKey);
-          
-          console.log(`🌬️ Wind fetched for ${cellKey}: ${speedMs.toFixed(1)}m/s @ ${direction}°`);
-          
-          return cellData;
-        }
-        
-        activeFetchesRef.current.delete(cellKey);
-        return cached || null;
-        
-      } catch (err) {
-        console.error(`❌ Wind fetch failed for ${cellKey}:`, err.message);
-        activeFetchesRef.current.delete(cellKey);
-        return cached || null;
-      }
-    };
-
-    /**
-     * FIXED: Animation loop - make sampleWindUV async
-     */
-    const animate = async (ts) => {
+    const animate = (ts) => {
       const map = mapObjRef.current;
       const ctx = ctxRef.current;
       const canvas = canvasRef.current;
@@ -1190,13 +1117,12 @@ import React, { useEffect, useRef, useState } from 'react';
             continue;
           }
 
-          // FIXED: Await wind data
-          const { u, v } = await sampleWindUV(p.lon, p.lat);
+          // FIXED: Synchronous wind sampling
+          const { u, v } = sampleWindUV(p.lon, p.lat);
           
-          if (u === 0 && v === 0) {
-            // No wind data yet, skip this particle
-            continue;
-          }
+          if (u === 0 && v === 0) continue;
+          
+          movedCount++;
           
           const coord3857 = fromLonLat([p.lon, p.lat]);
           const newX = coord3857[0] + u * dt;
@@ -1228,14 +1154,13 @@ import React, { useEffect, useRef, useState } from 'react';
           ctx.beginPath();
           ctx.arc(px[0], px[1], CONFIG.DOT_RADIUS_PX, 0, Math.PI * 2);
           ctx.fill();
-
-          movedCount++;
         }
 
         ctx.shadowBlur = 0;
 
         if (Math.floor(ts / 5000) !== Math.floor((ts - 16) / 5000)) {
-          console.log(`🌬️ Particles: ${particles.length} | Moved: ${movedCount} | Wind cache: ${windGridCacheRef.current.size} cells`);
+          const stats = sharedWindCache.getStats();
+          console.log(`🌬️ Full map: ${particles.length} particles | ${movedCount} moved | Cache: ${stats.windCacheSize} cells | API calls: ${stats.windApiCalls} | Hit rate: ${(stats.hitRate * 100).toFixed(1)}%`);
         }
       }
 
@@ -1449,6 +1374,11 @@ import React, { useEffect, useRef, useState } from 'react';
               renderCloudsOverlay();
             });
           }
+          
+          // Pre-fetch new viewport cells
+          if (layers.wind || isWindActiveRef.current) {
+            prefetchVisibleCells();
+          }
         }, 2000);
       };
       
@@ -1559,52 +1489,56 @@ import React, { useEffect, useRef, useState } from 'react';
         }
         
         // Weather layers (temperature, precipitation, clouds) are mutually exclusive
-        if (layerName === 'temperature' || layerName === 'precipitation' || layerName === 'clouds') {
-          // If clicking the same layer that's already active, turn it off
-          if (prev[layerName]) {
-            newLayers[layerName] = false;
-          } else {
-            // Turn off all weather layers, then turn on the clicked one
-            newLayers.temperature = false;
-            newLayers.precipitation = false;
-            newLayers.clouds = false;
+        // ADDED: Support for 'none' option to disable all weather overlays
+        if (layerName === 'temperature' || layerName === 'precipitation' || layerName === 'clouds' || layerName === 'none') {
+          // Turn off all weather layers first
+          newLayers.temperature = false;
+          newLayers.precipitation = false;
+          newLayers.clouds = false;
+          
+          // If not selecting 'none', turn on the selected layer
+          if (layerName !== 'none') {
             newLayers[layerName] = true;
           }
           
           // Handle temperature layer
           if (layerName === 'temperature') {
-            console.log(`🌡️ Temperature layer toggled: ${newLayers.temperature ? 'ON' : 'OFF'}`);
+            console.log(`🌡️ Temperature layer toggled: ON`);
             
-            if (newLayers.temperature) {
-              fetchVisibleTemperatures().then(() => {
-                renderTemperatureOverlay();
-              });
-            } else {
-              setMousePos(null);
-              setHoveredTemp(null);
-            }
+            fetchVisibleTemperatures().then(() => {
+              renderTemperatureOverlay();
+            });
+          } else {
+            // Clear temperature hover when switching away
+            setMousePos(null);
+            setHoveredTemp(null);
           }
           
           // Handle precipitation layer
           if (layerName === 'precipitation') {
-            console.log(`💧 Precipitation layer toggled: ${newLayers.precipitation ? 'ON' : 'OFF'}`);
+            console.log(`💧 Precipitation layer toggled: ON`);
             
-            if (newLayers.precipitation) {
-              fetchVisiblePrecipitation().then(() => {
-                renderPrecipitationOverlay();
-              });
-            }
+            fetchVisiblePrecipitation().then(() => {
+              renderPrecipitationOverlay();
+            });
           }
           
           // Handle clouds layer
           if (layerName === 'clouds') {
-            console.log(`☁️ Clouds layer toggled: ${newLayers.clouds ? 'ON' : 'OFF'}`);
+            console.log(`☁️ Clouds layer toggled: ON`);
             
-            if (newLayers.clouds) {
-              fetchVisibleClouds().then(() => {
-                renderCloudsOverlay();
-              });
-            }
+            fetchVisibleClouds().then(() => {
+              renderCloudsOverlay();
+            });
+          }
+          
+          // Handle 'none' - clear all overlays
+          if (layerName === 'none') {
+            console.log(`🚫 All weather overlays disabled`);
+            // Clear all overlay canvases
+            renderTemperatureOverlay(); // Will clear since layers.temperature is false
+            renderPrecipitationOverlay();
+            renderCloudsOverlay();
           }
         }
         
@@ -1660,13 +1594,13 @@ import React, { useEffect, useRef, useState } from 'react';
         return;
       }
       
-      console.log('Starting wind rendering');
+      console.log('Starting wind rendering (full map)');
       isWindActiveRef.current = true;
       
       initOrResizeParticles();
       
-      // REMOVED: fetchVisibleGridCells() - this function doesn't exist
-      // Wind data is fetched on-demand by sampleWindUV when particles need it
+      // Pre-fetch visible cells
+      prefetchVisibleCells();
       
       if (!rafRef.current) {
         lastTimeRef.current = 0;
@@ -1790,6 +1724,31 @@ import React, { useEffect, useRef, useState } from 'react';
               }}>
                 Weather Overlay (select one):
               </div>
+
+              {/* ADDED: None option to disable all weather overlays */}
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                color: '#f4fff9',
+                fontSize: '0.95rem',
+              }}>
+                <input
+                  type="radio"
+                  name="weather-layer"
+                  checked={!layers.temperature && !layers.precipitation && !layers.clouds}
+                  onChange={() => handleLayerToggle('none')}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    cursor: 'pointer',
+                    accentColor: '#2fe79f',
+                  }}
+                />
+                <span>None</span>
+              </label>
 
               {/* Temperature Layer (Radio-like behavior) */}
               <label style={{

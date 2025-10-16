@@ -157,6 +157,51 @@
   border-bottom-color: #61ffd0;
 }
 
+/* No locations prompt */
+.forecast-no-locations {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: rgba(15, 107, 86, 0.2);
+  border-radius: 12px;
+  border: 2px dashed rgba(47, 231, 159, 0.3);
+}
+
+.no-locations-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+.forecast-no-locations h3 {
+  color: var(--highlight);
+  font-size: 1.3rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.forecast-no-locations p {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.no-locations-btn {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  background: var(--highlight);
+  color: #000;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.no-locations-btn:hover {
+  background: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(47, 231, 159, 0.3);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .forecast-grid {

@@ -70,13 +70,49 @@ export default function NavBar({ title = "Aether" }) {
     };
 
     const handleLogout = () => {
-        // Clear auth data
+        // 1. Clear authentication data
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
         sessionStorage.removeItem('authToken');
+        
+        // 2. Clear user-specific cached data (but keep API weather cache)
+        // Remove preferences cache
+        localStorage.removeItem('userPreferences');
+        sessionStorage.removeItem('userPreferences');
+        
+        // Remove weekly forecast cache
+        localStorage.removeItem('weeklyForecastCache');
+        sessionStorage.removeItem('weeklyForecastCache');
+        
+        // Remove saved locations cache
+        localStorage.removeItem('savedLocations');
+        sessionStorage.removeItem('savedLocations');
+        
+        // Remove alert subscriptions cache
+        localStorage.removeItem('alertSubscriptions');
+        sessionStorage.removeItem('alertSubscriptions');
+        
+        // Remove settings cache
+        localStorage.removeItem('settingsCache');
+        sessionStorage.removeItem('settingsCache');
+        
+        // 3. Update state
         setIsLoggedIn(false);
         setIsMenuOpen(false);
-        navigate('/');
+        
+        // 4. Dispatch storage event to notify other components
+        window.dispatchEvent(new Event('storage'));
+        
+        // 5. Dispatch custom logout event for complete app refresh
+        window.dispatchEvent(new CustomEvent('user-logout', {
+            detail: { timestamp: Date.now() }
+        }));
+        
+        // 6. Force page reload to reset all component states
+        // This clears React state, component cache, and forces fresh render
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 100);
     };
 
     const handleLogoClick = () => {
@@ -85,8 +121,8 @@ export default function NavBar({ title = "Aether" }) {
 
     const menuItems = [
         { icon: '🏠', label: 'Dashboard', path: '/' },
+        { icon: '📊', label: 'Analytics', path: '/analytics' },
         { icon: '🗺️', label: 'Live Map', path: '/live-map' },
-        { icon: '📊', label: 'API Limitations', path: '/api-limitations' },
         { icon: '❓', label: 'Help & Support', path: '/help' }
     ];
 

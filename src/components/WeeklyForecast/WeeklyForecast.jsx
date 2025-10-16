@@ -13,6 +13,20 @@ function WeeklyForecast() {
 
   useEffect(() => {
     fetchTopLocationAndForecast();
+    
+    // ADDED: Listen for logout to clear forecast
+    const handleLogout = () => {
+      console.log('🧹 Clearing weekly forecast cache');
+      setForecastData(null);
+      setTopLocation(null);
+      setError(null);
+    };
+    
+    window.addEventListener('user-logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('user-logout', handleLogout);
+    };
   }, []);
 
   const fetchTopLocationAndForecast = async () => {
@@ -35,7 +49,8 @@ function WeeklyForecast() {
       const locationsData = await locationsRes.json();
       
       if (!locationsData.locations || locationsData.locations.length === 0) {
-        setError('No saved locations. Add locations in your profile.');
+        // CHANGED: Set specific error for no locations
+        setError('NO_LOCATIONS');
         setLoading(false);
         return;
       }
@@ -288,6 +303,25 @@ function WeeklyForecast() {
         <div className="forecast-loading">
           <div className="loading-spinner"></div>
           <p>Loading forecast...</p>
+        </div>
+      </section>
+    );
+  }
+
+  // ADDED: Special case for no saved locations
+  if (error === 'NO_LOCATIONS') {
+    return (
+      <section className="weekly-forecast">
+        <div className="forecast-header">
+          <h2>7-Day Forecast</h2>
+        </div>
+        <div className="forecast-no-locations">
+          <div className="no-locations-icon">📍</div>
+          <h3>No Saved Locations</h3>
+          <p>Add your favorite locations to get personalized 7-day forecasts.</p>
+          <Link to="/profile?tab=locations" className="no-locations-btn">
+            Add Locations
+          </Link>
         </div>
       </section>
     );

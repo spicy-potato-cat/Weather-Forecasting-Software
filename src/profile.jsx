@@ -89,6 +89,13 @@ function ProfilePage() {
         setUser(JSON.parse(userData));
         fetchUserPreferences(token);
         fetchSavedLocations(token);
+
+        // Check URL query param for initial tab
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        if (tabParam && ['profile', 'preferences', 'locations'].includes(tabParam)) {
+            setActiveTab(tabParam);
+        }
     }, [navigate]);
 
     const fetchUserPreferences = async (token) => {

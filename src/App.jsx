@@ -22,6 +22,9 @@ import { formatTemperature, formatWindSpeed, formatPressure } from './lib/math.j
 import AlertBanner from './components/AlertBanner/AlertBanner.jsx'
 import ForgotPassword from './ForgotPassword.jsx';
 import ResetPassword from './ResetPassword.jsx';
+import Settings from './pages/Settings.jsx';
+import Analytics from './pages/Analytics.jsx';
+
 
 // Attribute tab list
 const attributes = [
@@ -233,6 +236,7 @@ function Dashboard() {
 function App() {
   const location = useLocation();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Check authentication status
   useEffect(() => {
@@ -243,9 +247,23 @@ function App() {
 
     checkAuth();
     window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
+    
+    // ADDED: Listen for logout event to force refresh
+    const handleLogout = () => {
+      console.log('🔄 User logged out - refreshing app state');
+      setIsLoggedIn(false);
+      setRefreshKey(prev => prev + 1); // Force re-render all components
+    };
+    
+    window.addEventListener('user-logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('storage', checkAuth);
+      window.removeEventListener('user-logout', handleLogout);
+    };
   }, []);
 
+  // Special routes that render without the main layout
   // If on /live-map, render only the map page (full viewport)
   if (location.pathname === '/live-map') {
     return <LiveMapPage />;
@@ -262,6 +280,15 @@ function App() {
 
   if (location.pathname === '/profile') {
     return <ProfilePage />;
+  }
+
+  // MOVED: Settings page route (before other special pages)
+  if (location.pathname === '/settings') {
+    return <Settings />;
+  }
+
+    if (location.pathname === '/analytics') {
+    return <Analytics />;
   }
 
   if (location.pathname === '/api-limitations') {
@@ -309,8 +336,35 @@ function App() {
           <Route path="/sealevel-pressure" element={<WeatherDetail name="Sealevel Pressure" />} />
         </Routes>
 
-        {/* Weekly Forecast - Only visible for logged-in users */}
-        {isLoggedIn && <WeeklyForecast />}
+        {/* Weekly Forecast Section - SIMPLIFIED login gate */}
+        {isLoggedIn ? (
+          <WeeklyForecast />
+        ) : (
+          <section className="weekly-forecast">
+            <div className="forecast-header">
+              <h2>7-Day Forecast</h2>
+            </div>
+            <div className="forecast-login-prompt glass--sm">
+              <div className="forecast-lock-icon">🔒</div>
+              <h3>Sign In for Weekly Forecasts</h3>
+              <p>
+                Access personalized 7-day forecasts for your saved locations.
+              </p>
+              <div className="forecast-cta-buttons">
+                <Link to="/login" className="forecast-cta-primary">
+                  Sign In
+                </Link>
+                <Link to="/signup" className="forecast-cta-secondary">
+                  Create Account
+                </Link>
+              </div>
+              <div className="forecast-protip">
+                <span className="protip-badge">💡</span>
+                <span>Save locations in your profile after signing in!</span>
+              </div>
+            </div>
+          </section>
+        )}
         
         {/* Map Section - Embedded interactive map */}
         <section className="map-section">
