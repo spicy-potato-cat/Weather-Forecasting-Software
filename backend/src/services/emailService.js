@@ -5,10 +5,10 @@ const { Client } = pg;
 
 class EmailService {
   constructor() {
-    // hMail SMTP configuration for development
+    // Try port 25 first (standard SMTP)
     this.hmailConfig = {
       host: '127.0.0.1',
-      port: 25,
+      port: 25, // Standard SMTP port
       secure: false,
       auth: {
         user: 'admin@aether.com',
@@ -17,8 +17,13 @@ class EmailService {
       tls: {
         rejectUnauthorized: false
       },
-      connectionTimeout: 5000,
-      greetingTimeout: 5000
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
+      logger: false,
+      debug: false,
+      pool: false,
+      requireTLS: false
     };
 
     // FIXED: hMail database configuration using postgres role
@@ -32,27 +37,67 @@ class EmailService {
 
     // Development: Use hMail SMTP
     if (process.env.NODE_ENV === 'development') {
-      try {
-        this.transporter = nodemailer.createTransport(this.hmailConfig);
-        
-        this.transporter.verify((error, success) => {
-          if (error) {
-            console.warn('⚠️ hMail SMTP not available:', error.message);
-            console.warn('📧 Email sending will be simulated (logged to console)');
-            this.configured = false;
-          } else {
-            console.log('✅ hMail SMTP service connected');
-            this.configured = true;
-          }
-        });
-      } catch (err) {
-        console.warn('⚠️ hMail SMTP initialization failed:', err.message);
-        this.configured = false;
-      }
+      this.initializeHmailConnection();
     } else {
       console.warn('⚠️ Production mode - hMail not configured');
       this.configured = false;
     }
+  }
+
+  async initializeHmailConnection() {
+    // Try port 25 first
+    try {
+      this.transporter = nodemailer.createTransport(this.hmailConfig);
+      await this.verifyConnection();
+    } catch (err) {
+      console.warn(`⚠️ Port 25 failed, trying port 587...`);
+      
+      // Fallback to port 587 (submission port)
+      this.hmailConfig.port = 587;
+      try {
+        this.transporter = nodemailer.createTransport(this.hmailConfig);
+        await this.verifyConnection();
+      } catch (err2) {
+        console.warn('⚠️ Both ports failed - email will be simulated');
+        this.configured = false;
+      }
+    }
+  }
+
+  async verifyConnection() {
+    return new Promise((resolve, reject) => {
+      Promise.race([
+        new Promise((res, rej) => {
+          this.transporter.verify((error, success) => {
+            if (error) rej(error);
+            else res(success);
+          });
+        }),
+        new Promise((_, rej) => 
+          setTimeout(() => rej(new Error('Connection timeout after 10s')), 10000)
+        )
+      ])
+      .then(() => {
+        console.log('✅ hMail SMTP service connected successfully');
+        console.log(`   Host: ${this.hmailConfig.host}:${this.hmailConfig.port}`);
+        console.log(`   User: ${this.hmailConfig.auth.user}`);
+        this.configured = true;
+        resolve();
+      })
+      .catch((error) => {
+        console.warn('⚠️ hMail SMTP not available:', error.message);
+        console.warn('');
+        console.warn('🔧 Troubleshooting checklist:');
+        console.warn('   1. ✓ hMailServer service running (services.msc)');
+        console.warn('   2. Check Settings → Protocols → SMTP → General tab has port 25 enabled');
+        console.warn('   3. Check admin@aether.com account exists (Domains → aether.com → Accounts)');
+        console.warn('   4. Check IP ranges allow localhost (Settings → Protocols → SMTP → IP Ranges)');
+        console.warn('   5. Restart hMailServer: net stop hMailServer && net start hMailServer');
+        console.warn('');
+        this.configured = false;
+        reject(error);
+      });
+    });
   }
 
   /**

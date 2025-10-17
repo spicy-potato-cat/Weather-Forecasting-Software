@@ -1,5 +1,7 @@
+// transporter setup (if any)
+
 // Send password reset OTP (for settings page)
-exports.sendPasswordResetOTP = async (email, userName, otp) => {
+export const sendPasswordResetOTP = async (email, userName, otp) => {
   const mailOptions = {
     from: '"Aether Weather" <noreply@aether.local>',
     to: email,
@@ -35,7 +37,7 @@ exports.sendPasswordResetOTP = async (email, userName, otp) => {
 };
 
 // Send password change confirmation
-exports.sendPasswordChangeConfirmation = async (email, userName) => {
+export const sendPasswordChangeConfirmation = async (email, userName) => {
   const mailOptions = {
     from: '"Aether Weather" <noreply@aether.local>',
     to: email,
@@ -69,7 +71,7 @@ exports.sendPasswordChangeConfirmation = async (email, userName) => {
 };
 
 // Send email change OTP
-exports.sendEmailChangeOTP = async (newEmail, userName, otp) => {
+export const sendEmailChangeOTP = async (newEmail, userName, otp) => {
   const mailOptions = {
     from: '"Aether Weather" <noreply@aether.local>',
     to: newEmail,
@@ -105,7 +107,7 @@ exports.sendEmailChangeOTP = async (newEmail, userName, otp) => {
 };
 
 // Send email change confirmation
-exports.sendEmailChangeConfirmation = async (oldEmail, newEmail, userName) => {
+export const sendEmailChangeConfirmation = async (oldEmail, newEmail, userName) => {
   // Send to old email
   const oldEmailOptions = {
     from: '"Aether Weather" <noreply@aether.local>',
@@ -164,7 +166,7 @@ exports.sendEmailChangeConfirmation = async (oldEmail, newEmail, userName) => {
 };
 
 // Send account deletion confirmation
-exports.sendAccountDeletionConfirmation = async (email, userName) => {
+export const sendAccountDeletionConfirmation = async (email, userName) => {
   const mailOptions = {
     from: '"Aether Weather" <noreply@aether.local>',
     to: email,
@@ -198,4 +200,17 @@ exports.sendAccountDeletionConfirmation = async (email, userName) => {
   };
 
   return transporter.sendMail(mailOptions);
+};
+
+// Add createHmailAccount stub (or import from src/services/emailService.js)
+export const createHmailAccount = async (email, password, name) => {
+  console.log(`📧 createHmailAccount called for: ${email}`);
+  // This is a stub - actual implementation is in src/services/emailService.js
+  return { success: true, message: 'Not implemented in this file' };
+};
+
+// Add sendEmail stub
+export const sendEmail = async (options) => {
+  console.log(`📧 sendEmail called:`, options);
+  return { success: true, message: 'Not implemented in this file' };
 };
