@@ -236,27 +236,29 @@ export default function NavBar({ title = "Aether" }) {
                                             <span className="menu-item-text">{item.label}</span>
                                         </button>
                                     ))}
+
+                                    {/* FIXED: Admin section OUTSIDE of previous conditional */}
+                                    {isAdmin && (
+                                        <>
+                                            <div className="menu-divider"></div>
+                                            <div className="menu-section-header">Admin Tools</div>
+                                            {adminMenuItems.map((item) => (
+                                                <button 
+                                                    key={item.label}
+                                                    className="menu-item menu-item-admin"
+                                                    onClick={() => {
+                                                        setIsMenuOpen(false);
+                                                        navigate(item.path);
+                                                    }}
+                                                >
+                                                    <span className="menu-item-icon">{item.icon}</span>
+                                                    <span className="menu-item-text">{item.label}</span>
+                                                </button>
+                                            ))}
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                        )}
-                        {isAdmin && (
-                            <>
-                                <div className="menu-divider"></div>
-                                <div className="menu-section-header">Admin Tools</div>
-                                {adminMenuItems.map((item) => (
-                                    <button 
-                                        key={item.label}
-                                        className="menu-item menu-item-admin"
-                                        onClick={() => {
-                                            setIsMenuOpen(false);
-                                            navigate(item.path);
-                                        }}
-                                    >
-                                        <span className="menu-item-icon">{item.icon}</span>
-                                        <span className="menu-item-text">{item.label}</span>
-                                    </button>
-                                ))}
-                            </>
                         )}
                     </div>
                 </div>
