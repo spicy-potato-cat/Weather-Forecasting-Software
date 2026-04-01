@@ -29,3 +29,6 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# Migrations
+backend/migrations/
