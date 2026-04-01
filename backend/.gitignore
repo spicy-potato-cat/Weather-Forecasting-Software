@@ -32,3 +32,6 @@ build/
 
 # Migrations
 backend/migrations/
+
+# Cache
+backend/cache/
